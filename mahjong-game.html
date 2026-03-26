@@ -1,0 +1,2072 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🀄 Mahjong</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body, #root { height: 100%; width: 100%; overflow: hidden; }
+  button:focus, button:active, button:focus-visible { outline: none !important; box-shadow: none !important; outline-width: 0 !important; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.9/babel.min.js"></script>
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef, useMemo } = React;
+
+// ============================================================
+// TILE SYSTEM
+// ============================================================
+
+const SUITS = ["bamboo", "characters", "dots"];
+const RANKS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+const WINDS = ["east", "south", "west", "north"];
+const DRAGONS = ["red", "green", "white"];
+
+const TILE_SYMBOLS = {
+  bamboo: ["", "🀐", "🀑", "🀒", "🀓", "🀔", "🀕", "🀖", "🀗", "🀘"],
+  characters: ["", "🀇", "🀈", "🀉", "🀊", "🀋", "🀌", "🀍", "🀎", "🀏"],
+  dots: ["", "🀙", "🀚", "🀛", "🀜", "🀝", "🀞", "🀟", "🀠", "🀡"],
+  wind: { east: "🀀", south: "🀁", west: "🀂", north: "🀃" },
+  dragon: { red: "🀄", green: "🀅", white: "🀆" },
+};
+
+// ============================================================
+// LOCALIZATION
+// ============================================================
+
+const LANG = {
+  en: {
+    tileName: (t) => {
+      if (t.suit === "wind") return `${t.honor} wind`;
+      if (t.suit === "dragon") return `${t.honor} dragon`;
+      return `${t.rank} ${t.suit}`;
+    },
+    seats: ["East (You)", "South (AI)", "West (AI)", "North (AI)"],
+    seatsShort: ["You", "South", "West", "North"],
+    windDisplay: (w) => ({ east: "East", south: "South", west: "West", north: "North" }[w]),
+    actionLabel: { chi: "Chi", peng: "Peng", gang: "Gang", hu: "Hu" },
+    // Menu
+    title: "🀄 Mahjong", subtitle: "House Rules Edition",
+    windRoundsLabel: "Wind Rounds:",
+    windRoundsBtn: (n) => `${n} (${n * 4} rounds)`,
+    startGame: "Start Game", langToggle: "中文",
+    difficultyLabel: "AI Difficulty:",
+    diffEasy: "Easy", diffMedium: "Medium", diffExpert: "Expert",
+    // Personalities
+    pGeneric: "Standard", pAggressive: "Aggressive", pDefensive: "Defensive", pAdaptive: "Adaptive",
+    rulesTitle: "House Rules",
+    rule1: "1. All three suits must be represented",
+    rule2: "2. At least one meld must have a terminal (1/9) or honor tile",
+    rule3: "3. Must have at least one open meld (claimed from discard)",
+    // Top bar
+    roundInfo: (num, total, wind) => `Round ${num}/${total} · ${wind} Wind`,
+    wallCount: (n) => `🧱 ${n}`,
+    turnOther: (name) => `${name}'s turn`,
+    turnDraw: "Your turn — draw a tile",
+    turnDiscard: "Your turn — select a tile to discard",
+    // Discard pool
+    poolTitle: "Discard Pool", latest: "Latest:",
+    // Actions
+    drawTile: "🎴 Draw Tile", discardSel: "✕ Discard Selected",
+    declareHu: "🀄 Declare Hu!",
+    gangBtn: (name) => `Gang (${name})`,
+    // Claim
+    discardedBy: (name) => `${name} discarded `,
+    youCan: "You can ", winRound: " — Win the round!",
+    pass: "Pass", claimBtn: (type) => `Claim ${type}`,
+    chiBtn: (tiles) => `Chi: ${tiles}`, huBtn: "🀄 Hu!",
+    // Round over
+    youWin: "🎉 You Win!", otherWins: (name) => `${name} Wins!`,
+    drawExhausted: "Draw — Wall Exhausted", winHand: "Winning hand:",
+    gameComplete: "Game Complete!", backMenu: "Back to Menu", nextRound: "Next Round →",
+    open: "open", hidden: "hidden", tiles: "tiles",
+    // Log messages
+    logRoundBegin: (n, d) => `Round ${n} begins. ${d} is dealer.`,
+    logExhaust: "Wall exhausted — draw!",
+    logGangConc: (n, t) => `${n} declares concealed Gang of ${t}.`,
+    logZimo: (n, t) => `${n} draws ${t} and wins by Zimo!`,
+    logDraw: (n) => `${n} draws a tile.`,
+    logDiscard: (n, t) => `${n} discards ${t}.`,
+    logDianpao: (n, t) => `${n} claims ${t} and wins by Dianpao!`,
+    logClaim: (n, t, ty) => `${n} claims ${t} for ${ty}.`,
+    logYouDraw: (t) => `You draw ${t}.`,
+    logCanHu: "You can declare Hu (Zimo)!",
+    logYouDiscard: (t) => `You discard ${t}.`,
+    logYouHu: "You declare Hu by Zimo!",
+    logBadHu: "Your hand is not a valid Hu.",
+    logYouGang: (t) => `You declare concealed Gang of ${t}. Drew replacement tile.`,
+    logOver: "Game over!",
+  },
+  zh: {
+    tileName: (t) => {
+      const s = { bamboo: "条", characters: "万", dots: "饼" };
+      const w = { east: "东风", south: "南风", west: "西风", north: "北风" };
+      const d = { red: "红中", green: "发财", white: "白板" };
+      const n = ["", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
+      if (t.suit === "wind") return w[t.honor];
+      if (t.suit === "dragon") return d[t.honor];
+      return `${n[t.rank]}${s[t.suit]}`;
+    },
+    seats: ["东（你）", "南（电脑）", "西（电脑）", "北（电脑）"],
+    seatsShort: ["你", "南", "西", "北"],
+    windDisplay: (w) => ({ east: "东", south: "南", west: "西", north: "北" }[w]),
+    actionLabel: { chi: "吃", peng: "碰", gang: "杠", hu: "胡" },
+    title: "🀄 麻将", subtitle: "自定义规则版",
+    windRoundsLabel: "风圈数：",
+    windRoundsBtn: (n) => `${n}圈（${n * 4}局）`,
+    startGame: "开始游戏", langToggle: "EN",
+    difficultyLabel: "电脑难度：",
+    diffEasy: "简单", diffMedium: "中等", diffExpert: "专家",
+    pGeneric: "普通", pAggressive: "激进", pDefensive: "保守", pAdaptive: "随机应变",
+    rulesTitle: "自定义规则",
+    rule1: "一、手牌须包含条、万、饼三种花色",
+    rule2: "二、至少一组牌含幺九牌或字牌",
+    rule3: "三、须有至少一组明牌（吃、碰、杠）",
+    roundInfo: (num, total, wind) => `第${num}/${total}局 · ${wind}风`,
+    wallCount: (n) => `🧱 ${n}`,
+    turnOther: (name) => `${name}出牌中`,
+    turnDraw: "你的回合 — 摸牌",
+    turnDiscard: "你的回合 — 选牌打出",
+    poolTitle: "牌河", latest: "最新：",
+    drawTile: "🎴 摸牌", discardSel: "✕ 打出",
+    declareHu: "🀄 胡牌！",
+    gangBtn: (name) => `杠（${name}）`,
+    discardedBy: (name) => `${name}打出了 `,
+    youCan: "你可以", winRound: " — 赢得本局！",
+    pass: "过", claimBtn: (type) => `${type}`,
+    chiBtn: (tiles) => `吃：${tiles}`, huBtn: "🀄 胡！",
+    youWin: "🎉 你赢了！", otherWins: (name) => `${name}赢了！`,
+    drawExhausted: "流局 — 牌墙摸完", winHand: "赢牌：",
+    gameComplete: "游戏结束！", backMenu: "返回主菜单", nextRound: "下一局 →",
+    open: "明", hidden: "暗", tiles: "张",
+    logRoundBegin: (n, d) => `第${n}局开始。${d}是庄家。`,
+    logExhaust: "流局 — 牌墙摸完！",
+    logGangConc: (n, t) => `${n}暗杠${t}。`,
+    logZimo: (n, t) => `${n}摸到${t}，自摸胡牌！`,
+    logDraw: (n) => `${n}摸了一张牌。`,
+    logDiscard: (n, t) => `${n}打出${t}。`,
+    logDianpao: (n, t) => `${n}胡了${t}，点炮！`,
+    logClaim: (n, t, ty) => `${n}${ty}了${t}。`,
+    logYouDraw: (t) => `你摸到了${t}。`,
+    logCanHu: "你可以胡牌（自摸）！",
+    logYouDiscard: (t) => `你打出了${t}。`,
+    logYouHu: "你自摸胡牌！",
+    logBadHu: "你的手牌不能胡。",
+    logYouGang: (t) => `你暗杠了${t}，补了一张牌。`,
+    logOver: "游戏结束！",
+  },
+};
+
+function createTile(suit, rank, honor) {
+  return { suit, rank, honor, id: Math.random().toString(36).substr(2, 9) };
+}
+
+function tileKey(t) {
+  if (t.honor) return `${t.suit}_${t.honor}`;
+  return `${t.suit}_${t.rank}`;
+}
+
+function tileSymbol(t) {
+  if (t.suit === "wind") return TILE_SYMBOLS.wind[t.honor];
+  if (t.suit === "dragon") return TILE_SYMBOLS.dragon[t.honor];
+  return TILE_SYMBOLS[t.suit][t.rank];
+}
+
+function tileName(t) {
+  if (t.suit === "wind") return `${t.honor} wind`;
+  if (t.suit === "dragon") return `${t.honor} dragon`;
+  return `${t.rank} ${t.suit}`;
+}
+
+function tilesMatch(a, b) {
+  return tileKey(a) === tileKey(b);
+}
+
+function isHonor(t) {
+  return t.suit === "wind" || t.suit === "dragon";
+}
+
+function isTerminal(t) {
+  return !isHonor(t) && (t.rank === 1 || t.rank === 9);
+}
+
+function isTerminalOrHonor(t) {
+  return isHonor(t) || isTerminal(t);
+}
+
+function isSuit(t) {
+  return SUITS.includes(t.suit);
+}
+
+function createDeck() {
+  const tiles = [];
+  for (const suit of SUITS) {
+    for (const rank of RANKS) {
+      for (let i = 0; i < 4; i++) tiles.push(createTile(suit, rank, null));
+    }
+  }
+  for (const w of WINDS) {
+    for (let i = 0; i < 4; i++) tiles.push(createTile("wind", null, w));
+  }
+  for (const d of DRAGONS) {
+    for (let i = 0; i < 4; i++) tiles.push(createTile("dragon", null, d));
+  }
+  return tiles;
+}
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function sortHand(hand) {
+  return [...hand].sort((a, b) => {
+    const suitOrder = { bamboo: 0, characters: 1, dots: 2, wind: 3, dragon: 4 };
+    if (suitOrder[a.suit] !== suitOrder[b.suit]) return suitOrder[a.suit] - suitOrder[b.suit];
+    if (a.rank && b.rank) return a.rank - b.rank;
+    if (a.honor && b.honor) {
+      const ho = { east: 0, south: 1, west: 2, north: 3, red: 0, green: 1, white: 2 };
+      return (ho[a.honor] || 0) - (ho[b.honor] || 0);
+    }
+    return 0;
+  });
+}
+
+// ============================================================
+// HAND VALIDATION
+// ============================================================
+
+function countTiles(tiles) {
+  const counts = {};
+  for (const t of tiles) {
+    const k = tileKey(t);
+    if (!counts[k]) counts[k] = { key: k, tile: t, count: 0 };
+    counts[k].count++;
+  }
+  return counts;
+}
+
+// Try all decompositions of concealed tiles into melds + 1 pair
+function decompose(tiles) {
+  const results = [];
+  tryDecompose(tiles, [], null, results);
+  return results;
+}
+
+function tryDecompose(remaining, melds, pair, results) {
+  if (remaining.length === 0) {
+    if (pair && melds.length > 0) {
+      results.push({ melds: [...melds], pair: [...pair] });
+    } else if (pair && melds.length === 0) {
+      results.push({ melds: [], pair: [...pair] });
+    }
+    return;
+  }
+
+  const sorted = sortHand(remaining);
+  const first = sorted[0];
+  const firstKey = tileKey(first);
+
+  // Try pair (only if no pair yet)
+  if (!pair) {
+    const pairTiles = sorted.filter((t) => tileKey(t) === firstKey);
+    if (pairTiles.length >= 2) {
+      const rest = [...sorted];
+      const idx1 = rest.findIndex((t) => t.id === pairTiles[0].id);
+      rest.splice(idx1, 1);
+      const idx2 = rest.findIndex((t) => t.id === pairTiles[1].id);
+      rest.splice(idx2, 1);
+      tryDecompose(rest, melds, [pairTiles[0], pairTiles[1]], results);
+    }
+  }
+
+  // Try peng (triplet)
+  const matchingTiles = sorted.filter((t) => tileKey(t) === firstKey);
+  if (matchingTiles.length >= 3) {
+    const rest = [...sorted];
+    for (let i = 0; i < 3; i++) {
+      const idx = rest.findIndex((t) => t.id === matchingTiles[i].id);
+      rest.splice(idx, 1);
+    }
+    tryDecompose(rest, [...melds, { type: "peng", tiles: matchingTiles.slice(0, 3) }], pair, results);
+  }
+
+  // Try chi (sequence) - only for suit tiles
+  if (isSuit(first) && first.rank <= 7) {
+    const suit = first.suit;
+    const r = first.rank;
+    const t1 = sorted.find((t) => t.suit === suit && t.rank === r);
+    const t2 = sorted.find((t) => t.suit === suit && t.rank === r + 1 && t.id !== t1?.id);
+    const t3 = sorted.find((t) => t.suit === suit && t.rank === r + 2 && t.id !== t1?.id && t.id !== t2?.id);
+    if (t1 && t2 && t3) {
+      const rest = [...sorted];
+      for (const t of [t1, t2, t3]) {
+        const idx = rest.findIndex((x) => x.id === t.id);
+        rest.splice(idx, 1);
+      }
+      tryDecompose(rest, [...melds, { type: "chi", tiles: [t1, t2, t3] }], pair, results);
+    }
+  }
+}
+
+function validateHu(player) {
+  // Rule 3: at least one open meld from a claim
+  const hasOpenClaim = player.openMelds.some((m) => m.claimed);
+  if (!hasOpenClaim) return false;
+
+  // Figure out how many concealed melds we need
+  const openMeldCount = player.openMelds.length;
+  const concealedNeeded = 4 - openMeldCount;
+  const concealedTiles = [...player.hand];
+
+  // We need exactly (concealedNeeded * 3 + 2) concealed tiles for melds + pair
+  // But with gangs, open melds use 4 tiles, so just check decomposition
+  if (concealedTiles.length !== concealedNeeded * 3 + 2) return false;
+
+  const decompositions = decompose(concealedTiles);
+
+  for (const d of decompositions) {
+    if (d.melds.length !== concealedNeeded) continue;
+
+    const allMelds = [...player.openMelds.map((m) => m), ...d.melds];
+    const pair = d.pair;
+
+    // Rule 1: all three suits represented (melds + pair)
+    const suitsPresent = new Set();
+    for (const m of allMelds) {
+      for (const t of m.tiles) {
+        if (isSuit(t)) suitsPresent.add(t.suit);
+      }
+    }
+    for (const t of pair) {
+      if (isSuit(t)) suitsPresent.add(t.suit);
+    }
+    if (!SUITS.every((s) => suitsPresent.has(s))) continue;
+
+    // Rule 2: at least one meld has terminal or honor
+    const hasTerminalOrHonor = allMelds.some((m) => m.tiles.some((t) => isTerminalOrHonor(t)));
+    if (!hasTerminalOrHonor) continue;
+
+    return true;
+  }
+  return false;
+}
+
+// Check if adding a tile would complete a valid hand
+function checkWinWithTile(player, tile) {
+  const testPlayer = {
+    ...player,
+    hand: [...player.hand, tile],
+  };
+  return validateHu(testPlayer);
+}
+
+// ============================================================
+// CLAIM DETECTION
+// ============================================================
+
+function findChiOptions(hand, discardedTile) {
+  if (!isSuit(discardedTile)) return [];
+  const options = [];
+  const suit = discardedTile.suit;
+  const rank = discardedTile.rank;
+  const suitTiles = hand.filter((t) => t.suit === suit);
+
+  // discard could be low, mid, or high of sequence
+  const sequences = [
+    [rank, rank + 1, rank + 2],
+    [rank - 1, rank, rank + 1],
+    [rank - 2, rank - 1, rank],
+  ];
+
+  for (const seq of sequences) {
+    if (seq[0] < 1 || seq[2] > 9) continue;
+    const needed = seq.filter((r) => r !== rank);
+    const found = [];
+    const used = new Set();
+    let valid = true;
+    for (const r of needed) {
+      const t = suitTiles.find((t) => t.rank === r && !used.has(t.id));
+      if (t) {
+        found.push(t);
+        used.add(t.id);
+      } else {
+        valid = false;
+        break;
+      }
+    }
+    if (valid) {
+      options.push({ type: "chi", tiles: [...found, discardedTile].sort((a, b) => a.rank - b.rank), fromHand: found });
+    }
+  }
+  return options;
+}
+
+function findPengOption(hand, discardedTile) {
+  const matching = hand.filter((t) => tilesMatch(t, discardedTile));
+  if (matching.length >= 2) {
+    return { type: "peng", tiles: [matching[0], matching[1], discardedTile], fromHand: [matching[0], matching[1]] };
+  }
+  return null;
+}
+
+function findGangOption(hand, discardedTile) {
+  const matching = hand.filter((t) => tilesMatch(t, discardedTile));
+  if (matching.length >= 3) {
+    return { type: "gang", tiles: [matching[0], matching[1], matching[2], discardedTile], fromHand: [matching[0], matching[1], matching[2]] };
+  }
+  return null;
+}
+
+function findConcealedGangs(hand) {
+  const counts = countTiles(hand);
+  const gangs = [];
+  for (const k in counts) {
+    if (counts[k].count === 4) {
+      const tiles = hand.filter((t) => tileKey(t) === k);
+      gangs.push({ type: "gang", tiles, concealed: true });
+    }
+  }
+  return gangs;
+}
+
+// ============================================================
+// AI LOGIC
+// ============================================================
+
+// --- EASY AI (original) ---
+
+function evaluateHandProgressEasy(hand, openMelds) {
+  let score = 0;
+  const counts = countTiles(hand);
+
+  for (const k in counts) {
+    const c = counts[k];
+    if (c.count >= 3) score += 6;
+    else if (c.count === 2) score += 3;
+  }
+
+  for (const suit of SUITS) {
+    const suitTiles = hand.filter((t) => t.suit === suit);
+    const ranks = [...new Set(suitTiles.map((t) => t.rank))].sort((a, b) => a - b);
+    for (let i = 0; i < ranks.length - 1; i++) {
+      if (ranks[i + 1] - ranks[i] <= 2) score += 2;
+    }
+  }
+
+  const suitsPresent = new Set();
+  for (const t of hand) if (isSuit(t)) suitsPresent.add(t.suit);
+  for (const m of openMelds) for (const t of m.tiles) if (isSuit(t)) suitsPresent.add(t.suit);
+  score += suitsPresent.size * 2;
+
+  const hasTermHonor = hand.some((t) => isTerminalOrHonor(t)) || openMelds.some((m) => m.tiles.some((t) => isTerminalOrHonor(t)));
+  if (hasTermHonor) score += 3;
+
+  return score;
+}
+
+function aiChooseDiscardEasy(hand, openMelds, _allDiscards) {
+  let bestDiscard = 0;
+  let bestScore = -Infinity;
+  for (let i = 0; i < hand.length; i++) {
+    const testHand = hand.filter((_, j) => j !== i);
+    const score = evaluateHandProgressEasy(testHand, openMelds);
+    if (score > bestScore) {
+      bestScore = score;
+      bestDiscard = i;
+    }
+  }
+  return bestDiscard;
+}
+
+function aiDecideClaimEasy(player, discardedTile, claimType, _seatIndex, _discarderIndex, _allDiscards) {
+  if (claimType === "hu") return true;
+  const currentScore = evaluateHandProgressEasy(player.hand, player.openMelds);
+
+  if (claimType === "gang") {
+    const opt = findGangOption(player.hand, discardedTile);
+    if (!opt) return false;
+    const newHand = player.hand.filter((t) => !opt.fromHand.some((f) => f.id === t.id));
+    const newMelds = [...player.openMelds, { ...opt, claimed: true }];
+    return evaluateHandProgressEasy(newHand, newMelds) > currentScore;
+  }
+  if (claimType === "peng") {
+    const opt = findPengOption(player.hand, discardedTile);
+    if (!opt) return false;
+    const newHand = player.hand.filter((t) => !opt.fromHand.some((f) => f.id === t.id));
+    const newMelds = [...player.openMelds, { ...opt, claimed: true }];
+    return evaluateHandProgressEasy(newHand, newMelds) > currentScore;
+  }
+  if (claimType === "chi") {
+    const opts = findChiOptions(player.hand, discardedTile);
+    if (opts.length === 0) return false;
+    for (const opt of opts) {
+      const newHand = player.hand.filter((t) => !opt.fromHand.some((f) => f.id === t.id));
+      const newMelds = [...player.openMelds, { ...opt, claimed: true }];
+      if (evaluateHandProgressEasy(newHand, newMelds) > currentScore + 1) return opt;
+    }
+    return false;
+  }
+  return false;
+}
+
+// --- EXPERT AI ---
+
+// Count how many copies of a tile are visible (discards + open melds of all players)
+function countVisible(tile, allDiscards, allOpenMelds) {
+  const k = tileKey(tile);
+  let n = 0;
+  for (const d of allDiscards) if (tileKey(d) === k) n++;
+  for (const m of allOpenMelds) for (const t of m.tiles) if (tileKey(t) === k) n++;
+  return n;
+}
+
+// How many copies remain unseen (max 4 of each)
+function tilesRemaining(tile, hand, allDiscards, allOpenMelds) {
+  const k = tileKey(tile);
+  let seen = countVisible(tile, allDiscards, allOpenMelds);
+  seen += hand.filter((t) => tileKey(t) === k).length;
+  return Math.max(0, 4 - seen);
+}
+
+// Gather all discards and open melds from all players
+function gatherVisible(players) {
+  const allDiscards = [];
+  const allOpenMelds = [];
+  for (const p of players) {
+    allDiscards.push(...p.discards);
+    allOpenMelds.push(...p.openMelds);
+  }
+  return { allDiscards, allOpenMelds };
+}
+
+// Count completed melds in concealed hand (greedy) — returns { melds, pairs, leftovers }
+function countConcealedMelds(hand) {
+  const sorted = [...hand].sort((a, b) => {
+    if (a.suit !== b.suit) return a.suit < b.suit ? -1 : 1;
+    if (a.rank !== b.rank) return (a.rank || 0) - (b.rank || 0);
+    return (a.honor || "") < (b.honor || "") ? -1 : 1;
+  });
+
+  // Try to find the best decomposition using a simple greedy + backtrack
+  let bestResult = { melds: 0, pairs: 0, leftover: sorted.length };
+
+  function tryDecomp(tiles, melds, pairs) {
+    if (tiles.length === 0) {
+      if (melds > bestResult.melds || (melds === bestResult.melds && pairs > bestResult.pairs)) {
+        bestResult = { melds, pairs, leftover: 0 };
+      }
+      return;
+    }
+    if (melds + Math.floor(tiles.length / 3) <= bestResult.melds && melds <= bestResult.melds) return;
+
+    const t = tiles[0];
+    const rest = tiles.slice(1);
+
+    // Try triplet
+    const matching = tiles.filter((x) => tilesMatch(x, t));
+    if (matching.length >= 3) {
+      const after = [...tiles];
+      let removed = 0;
+      const filtered = after.filter((x) => {
+        if (removed < 3 && tilesMatch(x, t)) { removed++; return false; }
+        return true;
+      });
+      tryDecomp(filtered, melds + 1, pairs);
+    }
+
+    // Try sequence (suit tiles only)
+    if (isSuit(t) && t.rank <= 7) {
+      const r2 = tiles.find((x) => x.suit === t.suit && x.rank === t.rank + 1);
+      const r3 = tiles.find((x) => x.suit === t.suit && x.rank === t.rank + 2);
+      if (r2 && r3) {
+        const after = [...tiles];
+        [t, r2, r3].forEach((rem) => {
+          const idx = after.findIndex((x) => x.id === rem.id);
+          if (idx >= 0) after.splice(idx, 1);
+        });
+        tryDecomp(after, melds + 1, pairs);
+      }
+    }
+
+    // Try pair
+    if (matching.length >= 2 && pairs === 0) {
+      const after = [...tiles];
+      let removed = 0;
+      const filtered = after.filter((x) => {
+        if (removed < 2 && tilesMatch(x, t)) { removed++; return false; }
+        return true;
+      });
+      tryDecomp(filtered, melds, pairs + 1);
+    }
+
+    // Skip this tile
+    tryDecomp(rest, melds, pairs);
+  }
+
+  tryDecomp(sorted, 0, 0);
+  return bestResult;
+}
+
+// Count "useful waits" — how many different tiles could form a new meld with existing partial groups
+function countWaits(hand, allDiscards, allOpenMelds) {
+  let waits = 0;
+  const checked = new Set();
+
+  // Check each unique tile that could complete something
+  for (const suit of SUITS) {
+    for (let rank = 1; rank <= 9; rank++) {
+      const testTile = { suit, rank, honor: null };
+      const k = tileKey(testTile);
+      if (checked.has(k)) continue;
+      checked.add(k);
+      const remaining = tilesRemaining(testTile, hand, allDiscards, allOpenMelds);
+      if (remaining === 0) continue;
+
+      // Would adding this tile increase our meld count?
+      const before = countConcealedMelds(hand);
+      const testHand = [...hand, testTile];
+      const after = countConcealedMelds(testHand);
+      if (after.melds > before.melds || (after.melds === before.melds && after.pairs > before.pairs)) {
+        waits += remaining;
+      }
+    }
+  }
+  // Honor tiles
+  for (const w of WINDS) {
+    const testTile = { suit: "wind", rank: null, honor: w };
+    const k = tileKey(testTile);
+    if (checked.has(k)) continue;
+    checked.add(k);
+    const remaining = tilesRemaining(testTile, hand, allDiscards, allOpenMelds);
+    if (remaining === 0) continue;
+    const before = countConcealedMelds(hand);
+    const after = countConcealedMelds([...hand, testTile]);
+    if (after.melds > before.melds || (after.melds === before.melds && after.pairs > before.pairs)) {
+      waits += remaining;
+    }
+  }
+  for (const d of DRAGONS) {
+    const testTile = { suit: "dragon", rank: null, honor: d };
+    const k = tileKey(testTile);
+    if (checked.has(k)) continue;
+    checked.add(k);
+    const remaining = tilesRemaining(testTile, hand, allDiscards, allOpenMelds);
+    if (remaining === 0) continue;
+    const before = countConcealedMelds(hand);
+    const after = countConcealedMelds([...hand, testTile]);
+    if (after.melds > before.melds || (after.melds === before.melds && after.pairs > before.pairs)) {
+      waits += remaining;
+    }
+  }
+
+  return waits;
+}
+
+function evaluateHandProgressExpert(hand, openMelds, allDiscards, allOpenMelds) {
+  let score = 0;
+
+  // Core: count concealed melds and pairs
+  const decomp = countConcealedMelds(hand);
+  const totalMelds = decomp.melds + openMelds.length;
+  score += totalMelds * 20;
+  score += decomp.pairs * 8;
+
+  // Waits/tile efficiency (capped for performance)
+  if (hand.length <= 10) {
+    const waits = countWaits(hand, allDiscards, allOpenMelds);
+    score += waits * 2;
+  }
+
+  // Partial groups: connected tiles that aren't yet melds
+  const counts = countTiles(hand);
+  for (const k in counts) {
+    if (counts[k].count === 2) score += 4; // pairs
+  }
+  for (const suit of SUITS) {
+    const ranks = hand.filter((t) => t.suit === suit).map((t) => t.rank);
+    const uniq = [...new Set(ranks)].sort((a, b) => a - b);
+    for (let i = 0; i < uniq.length - 1; i++) {
+      const gap = uniq[i + 1] - uniq[i];
+      if (gap === 1) score += 3; // adjacent
+      else if (gap === 2) score += 1; // one-gap
+    }
+  }
+
+  // === HOUSE RULE AWARENESS ===
+
+  // Rule 1: all 3 suits
+  const suitsPresent = new Set();
+  for (const t of hand) if (isSuit(t)) suitsPresent.add(t.suit);
+  for (const m of openMelds) for (const t of m.tiles) if (isSuit(t)) suitsPresent.add(t.suit);
+  if (suitsPresent.size === 3) score += 15;
+  else if (suitsPresent.size === 2) score += 6;
+  else score -= 5;
+
+  // Rule 2: terminal/honor in at least one meld
+  const meldHasTermHonor = openMelds.some((m) => m.tiles.some((t) => isTerminalOrHonor(t)));
+  const handHasTermHonor = hand.some((t) => isTerminalOrHonor(t));
+  if (meldHasTermHonor) score += 10;
+  else if (handHasTermHonor) score += 4;
+  else score -= 8;
+
+  // Rule 3: need at least one open (claimed) meld
+  const hasOpenClaim = openMelds.some((m) => m.claimed);
+  if (hasOpenClaim) score += 10;
+  else if (openMelds.length === 0) score -= 2; // neutral, still early
+
+  // Penalty for isolated tiles (no neighbors, only 1 copy) — dead tiles
+  for (const t of hand) {
+    if (isHonor(t)) {
+      const copies = hand.filter((x) => tilesMatch(x, t)).length;
+      if (copies === 1) {
+        const visible = countVisible(t, allDiscards, allOpenMelds);
+        if (visible >= 2) score -= 3; // only 1 left, hard to use
+      }
+    } else {
+      const copies = hand.filter((x) => tilesMatch(x, t)).length;
+      if (copies === 1) {
+        const hasNeighbor = hand.some((x) => x.suit === t.suit && x.rank !== t.rank && Math.abs(x.rank - t.rank) <= 2);
+        if (!hasNeighbor) score -= 2; // isolated suit tile
+      }
+    }
+  }
+
+  return score;
+}
+
+// --- PERSONALITY CONFIGS ---
+// defenseW: weight on safe-discard logic (0=ignore, 1=normal, 2=heavy)
+// pengThr: minimum score gain to peng (lower = claim more)
+// chiThr: minimum score gain to chi
+// gangThr: minimum score gain to gang (0 = always if not worse)
+// firstOpenBonus: extra value assigned to first claimed meld (rule 3)
+
+const PERSONALITIES = {
+  generic:    { defenseW: 1.0, pengThr: 3,  chiThr: 5,  gangThr: 0,  firstOpenBonus: 8  },
+  aggressive: { defenseW: 0.0, pengThr: -2, chiThr: 0,  gangThr: -5, firstOpenBonus: 12 },
+  defensive:  { defenseW: 2.5, pengThr: 8,  chiThr: 12, gangThr: 2,  firstOpenBonus: 4  },
+  adaptive:   null, // computed dynamically
+};
+
+const PERSONALITY_POOL = ["generic", "aggressive", "defensive", "adaptive", "generic"];
+
+function getAdaptiveConfig(wallLen, players, seatIndex) {
+  // Early game (>60 tiles): patient, slightly defensive
+  // Mid game (30-60): balanced
+  // Late game (<30): aggressive, race to win
+  const wallRatio = wallLen / 136;
+
+  // Check if any opponent looks close (many open melds)
+  let opponentThreat = false;
+  for (let i = 0; i < 4; i++) {
+    if (i === seatIndex) continue;
+    if (players[i].openMelds.length >= 3) opponentThreat = true;
+    if (players[i].hand.length <= 4 && players[i].openMelds.length >= 2) opponentThreat = true;
+  }
+
+  if (opponentThreat) {
+    // Switch to defensive when someone looks close to winning
+    return { defenseW: 2.0, pengThr: 6, chiThr: 10, gangThr: 0, firstOpenBonus: 6 };
+  }
+  if (wallRatio > 0.45) {
+    // Early: patient
+    return { defenseW: 1.2, pengThr: 5, chiThr: 8, gangThr: 0, firstOpenBonus: 8 };
+  }
+  if (wallRatio > 0.2) {
+    // Mid: balanced
+    return { defenseW: 1.0, pengThr: 3, chiThr: 5, gangThr: 0, firstOpenBonus: 8 };
+  }
+  // Late: aggressive push
+  return { defenseW: 0.3, pengThr: -1, chiThr: 1, gangThr: -3, firstOpenBonus: 12 };
+}
+
+function getPersonalityConfig(personality, wallLen, players, seatIndex) {
+  if (personality === "adaptive") return getAdaptiveConfig(wallLen, players, seatIndex);
+  return PERSONALITIES[personality] || PERSONALITIES.generic;
+}
+
+// --- EVAL by difficulty ---
+
+function evalHand(hand, openMelds, players, difficulty) {
+  if (difficulty === "easy") return evaluateHandProgressEasy(hand, openMelds);
+  const { allDiscards, allOpenMelds } = gatherVisible(players);
+  return evaluateHandProgressExpert(hand, openMelds, allDiscards, allOpenMelds);
+}
+
+// --- UNIFIED DISPATCH ---
+
+function aiChooseDiscard(hand, openMelds, players, difficulty, personality, wallLen, seatIndex) {
+  if (difficulty === "easy") return aiChooseDiscardEasy(hand, openMelds);
+
+  // Medium and Expert both use expert eval
+  const { allDiscards, allOpenMelds } = gatherVisible(players);
+  const cfg = getPersonalityConfig(personality, wallLen, players, seatIndex);
+  let bestDiscard = 0;
+  let bestScore = -Infinity;
+
+  for (let i = 0; i < hand.length; i++) {
+    const testHand = hand.filter((_, j) => j !== i);
+    let score = evaluateHandProgressExpert(testHand, openMelds, allDiscards, allOpenMelds);
+
+    // Defense logic (medium uses half weight, expert uses full personality weight)
+    const dw = difficulty === "medium" ? cfg.defenseW * 0.5 : cfg.defenseW;
+    if (dw > 0) {
+      const disc = hand[i];
+      const visible = countVisible(disc, allDiscards, allOpenMelds);
+      const inHand = hand.filter((t) => tilesMatch(t, disc)).length;
+
+      if (visible === 0 && inHand === 1) score -= 3 * dw;
+      if (visible >= 3) score += 2 * dw;
+      const discardedBefore = allDiscards.filter((t) => tilesMatch(t, disc)).length;
+      if (discardedBefore >= 1) score += 2 * dw;
+    }
+
+    if (score > bestScore) { bestScore = score; bestDiscard = i; }
+  }
+  return bestDiscard;
+}
+
+function aiDecideClaim(player, discardedTile, claimType, seatIndex, discarderIndex, players, difficulty, personality, wallLen) {
+  if (claimType === "hu") return true;
+  if (difficulty === "easy") return aiDecideClaimEasy(player, discardedTile, claimType, seatIndex, discarderIndex);
+
+  // Medium and Expert both use expert eval + personality thresholds
+  const cfg = getPersonalityConfig(personality, wallLen, players, seatIndex);
+  const { allDiscards, allOpenMelds } = gatherVisible(players);
+  const currentScore = evaluateHandProgressExpert(player.hand, player.openMelds, allDiscards, allOpenMelds);
+  const hadOpen = player.openMelds.some((m) => m.claimed);
+  const openBonus = hadOpen ? 0 : cfg.firstOpenBonus;
+
+  if (claimType === "gang") {
+    const opt = findGangOption(player.hand, discardedTile);
+    if (!opt) return false;
+    const newHand = player.hand.filter((t) => !opt.fromHand.some((f) => f.id === t.id));
+    const newMelds = [...player.openMelds, { ...opt, claimed: true }];
+    const newScore = evaluateHandProgressExpert(newHand, newMelds, allDiscards, allOpenMelds);
+    return newScore + openBonus >= currentScore + cfg.gangThr;
+  }
+
+  if (claimType === "peng") {
+    const opt = findPengOption(player.hand, discardedTile);
+    if (!opt) return false;
+    const newHand = player.hand.filter((t) => !opt.fromHand.some((f) => f.id === t.id));
+    const newMelds = [...player.openMelds, { ...opt, claimed: true }];
+    const newScore = evaluateHandProgressExpert(newHand, newMelds, allDiscards, allOpenMelds);
+    // Medium is slightly less strategic than expert
+    const thr = difficulty === "medium" ? Math.max(0, cfg.pengThr - 1) : cfg.pengThr;
+    return newScore + openBonus > currentScore + thr;
+  }
+
+  if (claimType === "chi") {
+    const opts = findChiOptions(player.hand, discardedTile);
+    if (opts.length === 0) return false;
+    let bestOpt = null;
+    let bestGain = -Infinity;
+
+    for (const opt of opts) {
+      const newHand = player.hand.filter((t) => !opt.fromHand.some((f) => f.id === t.id));
+      const newMelds = [...player.openMelds, { ...opt, claimed: true }];
+      const newScore = evaluateHandProgressExpert(newHand, newMelds, allDiscards, allOpenMelds);
+      const gain = newScore + openBonus - currentScore;
+      if (gain > bestGain) { bestGain = gain; bestOpt = opt; }
+    }
+
+    const thr = difficulty === "medium" ? Math.max(1, cfg.chiThr - 2) : cfg.chiThr;
+    if (bestGain > thr) return bestOpt;
+    return false;
+  }
+
+  return false;
+}
+
+function assignPersonalities() {
+  // Randomly assign from pool for seats 1-3 (AI players)
+  const shuffled = [...PERSONALITY_POOL].sort(() => Math.random() - 0.5);
+  return [null, shuffled[0], shuffled[1], shuffled[2]]; // idx 0 = human
+}
+
+// ============================================================
+// GAME STATE
+// ============================================================
+
+const SEAT_WINDS = ["east", "south", "west", "north"];
+const SEAT_LABELS = ["East (You)", "South (AI)", "West (AI)", "North (AI)"];
+
+function createInitialState(windRounds = 1, lang = "en") {
+  const personalities = assignPersonalities();
+  return initRound({
+    dealer: 0,
+    roundWind: "east",
+    roundNumber: 1,
+    totalRounds: windRounds * 4,
+    windRounds,
+    scores: [0, 0, 0, 0],
+    roundResults: [],
+    personalities,
+  }, lang);
+}
+
+function initRound(gameInfo, lang = "en") {
+  const ll = LANG[lang];
+  const deck = shuffle(createDeck());
+  const players = [];
+  for (let i = 0; i < 4; i++) {
+    players.push({
+      hand: sortHand(deck.splice(0, 13)),
+      openMelds: [],
+      discards: [],
+      seatWind: SEAT_WINDS[(i - gameInfo.dealer + 4) % 4],
+    });
+  }
+  players[gameInfo.dealer].hand.push(deck.splice(0, 1)[0]);
+  players[gameInfo.dealer].hand = sortHand(players[gameInfo.dealer].hand);
+
+  return {
+    ...gameInfo,
+    players,
+    wall: deck,
+    currentTurn: gameInfo.dealer,
+    phase: "discard",
+    lastDiscard: null,
+    lastDiscarder: null,
+    claims: [],
+    winner: null,
+    isDraw: false,
+    log: [ll.logRoundBegin(gameInfo.roundNumber, ll.seats[gameInfo.dealer])],
+    pendingClaims: null,
+    selectedTile: null,
+    awaitingPlayerClaim: null,
+    playerDeclinedClaims: [],
+    turnDrawn: true,
+  };
+}
+
+// ============================================================
+// MAIN COMPONENT
+// ============================================================
+
+const PLAYER_IDX = 0;
+
+function MahjongGame() {
+  const [state, setState] = useState(() => createInitialState(1, "en"));
+  const [windRoundsSetting, setWindRoundsSetting] = useState(1);
+  const [showMenu, setShowMenu] = useState(true);
+  const [selectedTileIdx, setSelectedTileIdx] = useState(null);
+  const [claimOptions, setClaimOptions] = useState(null);
+  const [lang, setLang] = useState("en");
+  const [difficulty, setDifficulty] = useState("easy");
+  const [winSize, setWinSize] = useState({ w: typeof window !== "undefined" ? window.innerWidth : 1200, h: typeof window !== "undefined" ? window.innerHeight : 800 });
+  const logRef = useRef(null);
+  const autoPlayRef = useRef(null);
+  const langRef = useRef(lang);
+  langRef.current = lang;
+  const diffRef = useRef(difficulty);
+  diffRef.current = difficulty;
+
+  // Localization helpers
+  const L = LANG[lang];
+  const TN = (t) => L.tileName(t);
+  const SL = L.seats;
+  // For game logic (called inside setState where `lang` state may be stale)
+  const _L = () => LANG[langRef.current];
+  const _TN = (t) => _L().tileName(t);
+  const _SL = () => _L().seats;
+
+  const addLog = useCallback((msg) => {
+    setState((prev) => ({ ...prev, log: [...prev.log.slice(-50), msg] }));
+  }, []);
+
+  // Prevent buttons from receiving focus on click (click still fires)
+  const preventFocus = useCallback((e) => {
+    if (e.target.tagName === "BUTTON" || e.target.closest("button")) {
+      e.preventDefault();
+    }
+  }, []);
+
+  // Track window size for responsive scaling
+  useEffect(() => {
+    const onResize = () => setWinSize({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  // Dynamic styles based on viewport
+  const S = useMemo(() => makeStyles(winSize.w, winSize.h), [winSize.w, winSize.h]);
+
+  // Auto-scroll log
+  useEffect(() => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
+  }, [state.log]);
+
+  // AI auto-play
+  useEffect(() => {
+    if (showMenu || state.winner !== null || state.isDraw) return;
+    if (state.awaitingPlayerClaim) return;
+    if (state.currentTurn === PLAYER_IDX && state.phase === "discard" && state.turnDrawn) return;
+    if (state.currentTurn === PLAYER_IDX && state.phase === "draw") return;
+
+    const timer = setTimeout(() => {
+      setState((prev) => processAIAction(prev));
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [state.currentTurn, state.phase, state.turnDrawn, state.winner, state.isDraw, showMenu, state.awaitingPlayerClaim]);
+
+  function processAIAction(st) {
+    if (st.winner !== null || st.isDraw) return st;
+
+    // If we're in claim resolution phase
+    if (st.phase === "claim") {
+      return resolveClaims(st);
+    }
+
+    const p = st.currentTurn;
+    if (p === PLAYER_IDX) return st; // Don't auto-play for human
+
+    const player = st.players[p];
+
+    // Draw phase
+    if (st.phase === "draw") {
+      if (st.wall.length === 0) {
+        return { ...st, isDraw: true, log: [...st.log, _L().logExhaust] };
+      }
+      const tile = st.wall[0];
+      const newWall = st.wall.slice(1);
+      const newHand = sortHand([...player.hand, tile]);
+      const newPlayers = st.players.map((pl, i) => (i === p ? { ...pl, hand: newHand } : pl));
+      let newSt = { ...st, players: newPlayers, wall: newWall, phase: "discard", turnDrawn: true };
+
+      // Check for concealed gang
+      const cGangs = findConcealedGangs(newHand);
+      if (cGangs.length > 0) {
+        const gang = cGangs[0];
+        const afterHand = newHand.filter((t) => !gang.tiles.some((g) => g.id === t.id));
+        const newMelds = [...player.openMelds, { ...gang, claimed: false }];
+
+        if (newSt.wall.length === 0) {
+          return { ...newSt, isDraw: true, log: [...newSt.log, _L().logExhaust] };
+        }
+        const replacementTile = newSt.wall[0];
+        const afterWall = newSt.wall.slice(1);
+        const afterHandWithReplacement = sortHand([...afterHand, replacementTile]);
+
+        newPlayers[p] = { ...newPlayers[p], hand: afterHandWithReplacement, openMelds: newMelds };
+        newSt = {
+          ...newSt,
+          players: [...newPlayers],
+          wall: afterWall,
+          log: [...newSt.log, _L().logGangConc(_SL()[p], _TN(gang.tiles[0]))],
+        };
+      }
+
+      // Check self-draw win
+      const checkPlayer = newSt.players[p];
+      if (validateHu(checkPlayer)) {
+        return {
+          ...newSt,
+          winner: p,
+          log: [...newSt.log, _L().logZimo(_SL()[p], _TN(tile))],
+        };
+      }
+
+      return { ...newSt, log: [...newSt.log, _L().logDraw(_SL()[p])] };
+    }
+
+    // Discard phase
+    if (st.phase === "discard" && st.turnDrawn) {
+      const discardIdx = aiChooseDiscard(player.hand, player.openMelds, st.players, diffRef.current, (st.personalities || [])[p] || "generic", st.wall.length, p);
+      const discarded = player.hand[discardIdx];
+      const newHand = player.hand.filter((_, i) => i !== discardIdx);
+      const newPlayers = st.players.map((pl, i) =>
+        i === p ? { ...pl, hand: newHand, discards: [...pl.discards, discarded] } : pl
+      );
+
+      let newSt = {
+        ...st,
+        players: newPlayers,
+        lastDiscard: discarded,
+        lastDiscarder: p,
+        phase: "claim",
+        turnDrawn: false,
+        playerDeclinedClaims: [],
+        log: [...st.log, _L().logDiscard(_SL()[p], _TN(discarded))],
+      };
+
+      return newSt;
+    }
+
+    return st;
+  }
+
+  function resolveClaims(st) {
+    const disc = st.lastDiscard;
+    const discarder = st.lastDiscarder;
+    if (!disc) return advanceTurn(st);
+
+    // Track which claim types the player has already declined for this discard
+    const declined = st.playerDeclinedClaims || [];
+
+    // Check claims in priority order: Hu > Gang > Peng > Chi
+    // Check all players (except discarder)
+    let bestClaim = null;
+    let bestPriority = -1;
+    let bestPlayer = -1;
+
+    for (let i = 0; i < 4; i++) {
+      if (i === discarder) continue;
+      const player = st.players[i];
+
+      // Hu check
+      if (checkWinWithTile(player, disc)) {
+        const priority = 4;
+        const turnDist = (i - discarder + 4) % 4;
+        if (priority > bestPriority || (priority === bestPriority && turnDist < (bestPlayer - discarder + 4) % 4)) {
+          if (i === PLAYER_IDX) {
+            if (!declined.includes("hu")) {
+              return { ...st, awaitingPlayerClaim: { type: "hu", playerIdx: i, tile: disc } };
+            }
+          } else if (aiDecideClaim(player, disc, "hu", i, discarder, st.players, diffRef.current, (st.personalities || [])[i] || "generic", st.wall.length)) {
+            bestClaim = { type: "hu", playerIdx: i };
+            bestPriority = priority;
+            bestPlayer = i;
+          }
+        }
+      }
+
+      // Gang check
+      const gangOpt = findGangOption(player.hand, disc);
+      if (gangOpt && bestPriority < 3) {
+        if (i === PLAYER_IDX) {
+          if (!declined.includes("gang")) {
+            return { ...st, awaitingPlayerClaim: { type: "gang", playerIdx: i, tile: disc, option: gangOpt } };
+          }
+        } else if (aiDecideClaim(player, disc, "gang", i, discarder, st.players, diffRef.current, (st.personalities || [])[i] || "generic", st.wall.length)) {
+          bestClaim = { type: "gang", playerIdx: i, option: gangOpt };
+          bestPriority = 3;
+          bestPlayer = i;
+        }
+      }
+
+      // Peng check
+      const pengOpt = findPengOption(player.hand, disc);
+      if (pengOpt && bestPriority < 2) {
+        if (i === PLAYER_IDX) {
+          if (!declined.includes("peng")) {
+            return { ...st, awaitingPlayerClaim: { type: "peng", playerIdx: i, tile: disc, option: pengOpt } };
+          }
+        } else if (aiDecideClaim(player, disc, "peng", i, discarder, st.players, diffRef.current, (st.personalities || [])[i] || "generic", st.wall.length)) {
+          bestClaim = { type: "peng", playerIdx: i, option: pengOpt };
+          bestPriority = 2;
+          bestPlayer = i;
+        }
+      }
+
+      // Chi check (only from left neighbor)
+      const nextInTurn = (discarder + 1) % 4;
+      if (i === nextInTurn && bestPriority < 1) {
+        const chiOpts = findChiOptions(player.hand, disc);
+        if (chiOpts.length > 0) {
+          if (i === PLAYER_IDX) {
+            if (!declined.includes("chi")) {
+              return { ...st, awaitingPlayerClaim: { type: "chi", playerIdx: i, tile: disc, options: chiOpts } };
+            }
+          } else {
+            const aiResult = aiDecideClaim(player, disc, "chi", i, discarder, st.players, diffRef.current, (st.personalities || [])[i] || "generic", st.wall.length);
+            if (aiResult) {
+              const opt = typeof aiResult === "object" ? aiResult : chiOpts[0];
+              bestClaim = { type: "chi", playerIdx: i, option: opt };
+              bestPriority = 1;
+              bestPlayer = i;
+            }
+          }
+        }
+      }
+    }
+
+    if (bestClaim) {
+      return executeClaim(st, bestClaim);
+    }
+
+    return advanceTurn(st);
+  }
+
+  function executeClaim(st, claim) {
+    const p = claim.playerIdx;
+    const player = st.players[p];
+    const disc = st.lastDiscard;
+
+    if (claim.type === "hu") {
+      const newHand = [...player.hand, disc];
+      const newPlayers = st.players.map((pl, i) => (i === p ? { ...pl, hand: sortHand(newHand) } : pl));
+      // Remove from discarder's discard pool
+      const discarder = st.lastDiscarder;
+      newPlayers[discarder] = {
+        ...newPlayers[discarder],
+        discards: newPlayers[discarder].discards.filter((t) => t.id !== disc.id),
+      };
+      return {
+        ...st,
+        players: newPlayers,
+        winner: p,
+        awaitingPlayerClaim: null,
+        log: [...st.log, _L().logDianpao(_SL()[p], _TN(disc))],
+      };
+    }
+
+    const opt = claim.option;
+    const newHand = player.hand.filter((t) => !opt.fromHand.some((f) => f.id === t.id));
+    const meld = { type: opt.type, tiles: opt.tiles, claimed: true };
+    const newMelds = [...player.openMelds, meld];
+
+    // Remove disc from discarder's pool
+    const discarder = st.lastDiscarder;
+    const newPlayers = st.players.map((pl, i) => {
+      if (i === p) return { ...pl, hand: sortHand(newHand), openMelds: newMelds };
+      if (i === discarder) return { ...pl, discards: pl.discards.filter((t) => t.id !== disc.id) };
+      return pl;
+    });
+
+    let newSt = {
+      ...st,
+      players: newPlayers,
+      currentTurn: p,
+      lastDiscard: null,
+      lastDiscarder: null,
+      awaitingPlayerClaim: null,
+      log: [
+        ...st.log,
+        _L().logClaim(_SL()[p], _TN(disc), _L().actionLabel[claim.type] || claim.type),
+      ],
+    };
+
+    if (claim.type === "gang") {
+      // Draw replacement
+      if (newSt.wall.length === 0) {
+        return { ...newSt, isDraw: true, log: [...newSt.log, _L().logExhaust] };
+      }
+      const replacement = newSt.wall[0];
+      const afterWall = newSt.wall.slice(1);
+      const afterHand = sortHand([...newHand, replacement]);
+      newSt.players = newSt.players.map((pl, i) => (i === p ? { ...pl, hand: afterHand } : pl));
+      newSt.wall = afterWall;
+      newSt.phase = "discard";
+      newSt.turnDrawn = true;
+    } else {
+      newSt.phase = "discard";
+      newSt.turnDrawn = true;
+    }
+
+    return newSt;
+  }
+
+  function advanceTurn(st) {
+    const next = (st.lastDiscarder + 1) % 4;
+    return {
+      ...st,
+      currentTurn: next,
+      phase: "draw",
+      lastDiscard: null,
+      lastDiscarder: null,
+      turnDrawn: false,
+      playerDeclinedClaims: [],
+    };
+  }
+
+  // Player actions
+  function handlePlayerDraw() {
+    setState((prev) => {
+      if (prev.currentTurn !== PLAYER_IDX || prev.phase !== "draw") return prev;
+      if (prev.wall.length === 0) {
+        return { ...prev, isDraw: true, log: [...prev.log, _L().logExhaust] };
+      }
+      const tile = prev.wall[0];
+      const newWall = prev.wall.slice(1);
+      const player = prev.players[PLAYER_IDX];
+      const newHand = sortHand([...player.hand, tile]);
+      const newPlayers = prev.players.map((pl, i) => (i === PLAYER_IDX ? { ...pl, hand: newHand } : pl));
+      let newSt = {
+        ...prev,
+        players: newPlayers,
+        wall: newWall,
+        phase: "discard",
+        turnDrawn: true,
+        log: [...prev.log, _L().logYouDraw(_TN(tile))],
+      };
+
+      if (validateHu(newSt.players[PLAYER_IDX])) {
+        newSt.log = [...newSt.log, _L().logCanHu];
+      }
+
+      return newSt;
+    });
+    setSelectedTileIdx(null);
+  }
+
+  function handlePlayerDiscard(tileIdx) {
+    setState((prev) => {
+      if (prev.currentTurn !== PLAYER_IDX || prev.phase !== "discard" || !prev.turnDrawn) return prev;
+      const player = prev.players[PLAYER_IDX];
+      const discarded = player.hand[tileIdx];
+      const newHand = player.hand.filter((_, i) => i !== tileIdx);
+      const newPlayers = prev.players.map((pl, i) =>
+        i === PLAYER_IDX ? { ...pl, hand: newHand, discards: [...pl.discards, discarded] } : pl
+      );
+      return {
+        ...prev,
+        players: newPlayers,
+        lastDiscard: discarded,
+        lastDiscarder: PLAYER_IDX,
+        phase: "claim",
+        turnDrawn: false,
+        playerDeclinedClaims: [],
+        log: [...prev.log, _L().logYouDiscard(_TN(discarded))],
+      };
+    });
+    setSelectedTileIdx(null);
+  }
+
+  function handleDeclareHu() {
+    setState((prev) => {
+      if (prev.currentTurn !== PLAYER_IDX) return prev;
+      const player = prev.players[PLAYER_IDX];
+      if (validateHu(player)) {
+        return { ...prev, winner: PLAYER_IDX, log: [...prev.log, _L().logYouHu] };
+      }
+      return { ...prev, log: [...prev.log, _L().logBadHu] };
+    });
+  }
+
+  function handleDeclareConcealedGang(tiles) {
+    setState((prev) => {
+      if (prev.currentTurn !== PLAYER_IDX || prev.phase !== "discard") return prev;
+      const player = prev.players[PLAYER_IDX];
+      const newHand = player.hand.filter((t) => !tiles.some((g) => g.id === t.id));
+      const meld = { type: "gang", tiles, claimed: false, concealed: true };
+      const newMelds = [...player.openMelds, meld];
+
+      if (prev.wall.length === 0) {
+        return { ...prev, isDraw: true, log: [...prev.log, _L().logExhaust] };
+      }
+      const replacement = prev.wall[0];
+      const afterWall = prev.wall.slice(1);
+      const afterHand = sortHand([...newHand, replacement]);
+      const newPlayers = prev.players.map((pl, i) =>
+        i === PLAYER_IDX ? { ...pl, hand: afterHand, openMelds: newMelds } : pl
+      );
+      return {
+        ...prev,
+        players: newPlayers,
+        wall: afterWall,
+        log: [...prev.log, _L().logYouGang(_TN(tiles[0]))],
+      };
+    });
+  }
+
+  function handlePlayerClaim(accept, option) {
+    setState((prev) => {
+      if (!prev.awaitingPlayerClaim) return prev;
+      const claim = prev.awaitingPlayerClaim;
+      if (accept) {
+        const claimObj = {
+          type: claim.type,
+          playerIdx: claim.playerIdx,
+          option: option || claim.option,
+        };
+        return executeClaim({ ...prev, playerDeclinedClaims: [] }, claimObj);
+      } else {
+        // Player declined — record it and continue resolving
+        const declined = [...(prev.playerDeclinedClaims || []), claim.type];
+        const newSt = { ...prev, awaitingPlayerClaim: null, playerDeclinedClaims: declined };
+        return resolveClaims(newSt);
+      }
+    });
+    setClaimOptions(null);
+  }
+
+  function startNewGame() {
+    setState(createInitialState(windRoundsSetting, langRef.current));
+    setShowMenu(false);
+    setSelectedTileIdx(null);
+    setClaimOptions(null);
+  }
+
+  function nextRound() {
+    setState((prev) => {
+      const newDealer = (prev.dealer + 1) % 4;
+      const roundNum = prev.roundNumber + 1;
+      if (roundNum > prev.totalRounds) {
+        return { ...prev, log: [...prev.log, _L().logOver] };
+      }
+      const windIdx = Math.floor((roundNum - 1) / 4);
+      const newRoundWind = SEAT_WINDS[windIdx] || "east";
+      return initRound({
+        ...prev,
+        dealer: newDealer,
+        roundWind: newRoundWind,
+        roundNumber: roundNum,
+      }, langRef.current);
+    });
+  }
+
+  // Derived state
+  const player = state.players[PLAYER_IDX];
+  const isPlayerTurn = state.currentTurn === PLAYER_IDX;
+  const canDraw = isPlayerTurn && state.phase === "draw";
+  const canDiscard = isPlayerTurn && state.phase === "discard" && state.turnDrawn;
+  const canHu = isPlayerTurn && state.phase === "discard" && state.turnDrawn && validateHu(player);
+  const concealedGangs = isPlayerTurn && state.phase === "discard" && state.turnDrawn ? findConcealedGangs(player.hand) : [];
+  const roundOver = state.winner !== null || state.isDraw;
+  const gameOver = roundOver && state.roundNumber >= state.totalRounds;
+
+  // ============================================================
+  // HELPER: Render an opponent info strip
+  // ============================================================
+  const personalityLabel = (key) => {
+    const map = { generic: L.pGeneric, aggressive: L.pAggressive, defensive: L.pDefensive, adaptive: L.pAdaptive };
+    return map[key] || map.generic;
+  };
+
+  function renderOpponent(pIdx) {
+    const opp = state.players[pIdx];
+    const isActive = state.currentTurn === pIdx;
+    const pers = (state.personalities || [])[pIdx];
+    return (
+      <div style={{ ...S.oppStrip, ...(isActive ? S.oppStripActive : {}) }}>
+        <div style={S.oppHeader}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <span style={{ ...S.oppName, ...(isActive ? S.oppNameActive : {}) }}>
+              {isActive && <span style={S.turnIndicator}>▶ </span>}
+              {SL[pIdx]}
+            </span>
+            {pers && difficulty !== "easy" && (
+              <span style={S.personalityTag}>{personalityLabel(pers)}</span>
+            )}
+          </div>
+          <span style={S.oppTileCount}>{opp.hand.length} {L.tiles}</span>
+        </div>
+        {opp.openMelds.length > 0 && (
+          <div style={S.oppMeldsRow}>
+            {opp.openMelds.map((m, mi) => (
+              <div key={mi} style={S.oppMeldGroup}>
+                {m.tiles.map((t, ti) => (
+                  <span key={ti} style={{ ...S.oppMeldTile, ...(m.concealed ? S.concealedTile : {}) }}>
+                    {m.concealed ? "🀫" : tileSymbol(t)}
+                  </span>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ============================================================
+  // RENDER
+  // ============================================================
+
+  if (showMenu) {
+    return (
+      <div style={S.menuContainer} onMouseDown={preventFocus}>
+        <style dangerouslySetInnerHTML={{__html: `
+          *:focus, *:active, *:focus-visible,
+          button:focus, button:active, button:focus-visible {
+            outline: none !important;
+            outline-width: 0 !important;
+            box-shadow: none !important;
+            -webkit-tap-highlight-color: transparent !important;
+          }
+        `}} />
+        <div style={S.menuCard}>
+          <h1 style={S.menuTitle}>{L.title}</h1>
+          <p style={S.menuSubtitle}>{L.subtitle}</p>
+          <div style={S.menuSetting}>
+            <label style={S.menuLabel}>{L.windRoundsLabel}</label>
+            <div style={S.windButtons}>
+              {[1, 2, 4].map((n) => (
+                <button
+                  tabIndex={-1}
+                  key={n}
+                  style={{ ...S.windBtn, ...(windRoundsSetting === n ? S.windBtnActive : {}) }}
+                  onClick={() => setWindRoundsSetting(n)}
+                >
+                  {L.windRoundsBtn(n)}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={S.menuSetting}>
+            <label style={S.menuLabel}>{L.difficultyLabel}</label>
+            <div style={S.windButtons}>
+              {["easy", "medium", "expert"].map((d) => (
+                <button
+                  tabIndex={-1}
+                  key={d}
+                  style={{ ...S.windBtn, ...(difficulty === d ? S.windBtnActive : {}) }}
+                  onClick={() => setDifficulty(d)}
+                >
+                  {d === "easy" ? L.diffEasy : d === "medium" ? L.diffMedium : L.diffExpert}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={S.menuBtnRow}>
+            <button tabIndex={-1} style={S.startBtn} onClick={startNewGame}>{L.startGame}</button>
+            <button tabIndex={-1} style={S.langBtn} onClick={() => setLang(lang === "en" ? "zh" : "en")}>{L.langToggle}</button>
+          </div>
+          <div style={S.rulesBox}>
+            <h3 style={S.rulesTitle}>{L.rulesTitle}</h3>
+            <p style={S.ruleText}>{L.rule1}</p>
+            <p style={S.ruleText}>{L.rule2}</p>
+            <p style={S.ruleText}>{L.rule3}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={S.gameContainer} onMouseDown={preventFocus}>
+      <style dangerouslySetInnerHTML={{__html: `
+        *:focus, *:active, *:focus-visible,
+        button:focus, button:active, button:focus-visible {
+          outline: none !important;
+          outline-width: 0 !important;
+          box-shadow: none !important;
+          -webkit-tap-highlight-color: transparent !important;
+        }
+      `}} />
+      {/* ---- TOP BAR ---- */}
+      <div style={S.topBar}>
+        <div style={S.topBarLeft}>
+          <span style={S.roundInfo}>
+            {L.roundInfo(state.roundNumber, state.totalRounds, L.windDisplay(state.roundWind))}
+          </span>
+          <span style={S.wallCount}>{L.wallCount(state.wall.length)}</span>
+        </div>
+        <div style={S.topBarRight}>
+          {!isPlayerTurn && !state.awaitingPlayerClaim && !roundOver && (
+            <span style={S.statusText}>{L.turnOther(SL[state.currentTurn])}</span>
+          )}
+          {isPlayerTurn && canDraw && <span style={S.statusTextYou}>{L.turnDraw}</span>}
+          {isPlayerTurn && canDiscard && <span style={S.statusTextYou}>{L.turnDiscard}</span>}
+          <button tabIndex={-1} style={S.langBtn} onClick={() => setLang(lang === "en" ? "zh" : "en")}>{L.langToggle}</button>
+          <button tabIndex={-1} style={S.menuBtn} onClick={() => setShowMenu(true)}>☰</button>
+        </div>
+      </div>
+
+      {/* ---- OPPONENTS ROW ---- */}
+      <div style={S.opponentsRow}>
+        {renderOpponent(2)}
+        {renderOpponent(1)}
+        {renderOpponent(3)}
+      </div>
+
+      {/* ---- MAIN BOARD: discard pool + log side by side ---- */}
+      <div style={S.mainBoard}>
+        <div style={S.discardPoolScroll}>
+          <div style={S.discardPoolContainer}>
+            <div style={S.discardPoolHeader}>
+              <span style={S.discardPoolTitle}>{L.poolTitle}</span>
+              {state.lastDiscard && (
+                <span style={S.lastDiscardBadge}>
+                  {L.latest} <span style={S.lastDiscardEmoji}>{tileSymbol(state.lastDiscard)}</span> {TN(state.lastDiscard)}
+                  <span style={S.lastDiscardFrom}> — {SL[state.lastDiscarder]}</span>
+                </span>
+              )}
+            </div>
+            <div style={S.discardPoolGrid}>
+              {[0, 1, 2, 3].map((pIdx) => {
+                const p = state.players[pIdx];
+                return (
+                  <div key={pIdx} style={S.discardPlayerSection}>
+                    <div style={S.discardPlayerLabel}>
+                      {L.seatsShort[pIdx]}
+                    </div>
+                    <div style={S.discardTilesWrap}>
+                      {p.discards.length === 0 && <span style={S.discardEmpty}>—</span>}
+                      {p.discards.map((t, i) => {
+                        const isLast = state.lastDiscard && t.id === state.lastDiscard.id;
+                        return (
+                          <span
+                            key={i}
+                            style={{ ...S.discardTile, ...(isLast ? S.discardTileLatest : {}) }}
+                            title={TN(t)}
+                          >
+                            {tileSymbol(t)}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Game log */}
+        <div style={S.logPanel} ref={logRef}>
+          {state.log.map((msg, i) => (
+            <div key={i} style={S.logEntry}>{msg}</div>
+          ))}
+        </div>
+      </div>
+
+      {/* ---- CLAIM PROMPT (inline between board and hand) ---- */}
+      {state.awaitingPlayerClaim && (
+        <div style={S.claimBanner}>
+          <div style={S.claimBannerInner}>
+            <div style={S.claimBannerLeft}>
+              <span style={S.claimTileBig}>{tileSymbol(state.awaitingPlayerClaim.tile)}</span>
+              <div style={S.claimBannerText}>
+                <p style={S.claimTitle}>
+                  {state.lastDiscarder !== null && L.discardedBy(SL[state.lastDiscarder])}
+                  <strong>{TN(state.awaitingPlayerClaim.tile)}</strong>
+                </p>
+                <p style={S.claimQuestion}>
+                  {L.youCan}<strong>{L.actionLabel[state.awaitingPlayerClaim.type] || state.awaitingPlayerClaim.type.toUpperCase()}</strong>
+                  {state.awaitingPlayerClaim.type === "hu" && L.winRound}
+                </p>
+              </div>
+            </div>
+            <div style={S.claimBannerBtns}>
+              {state.awaitingPlayerClaim.type === "chi" && state.awaitingPlayerClaim.options ? (
+                <>
+                  {state.awaitingPlayerClaim.options.map((opt, i) => (
+                    <button tabIndex={-1} key={i} style={S.claimAccept} onClick={() => handlePlayerClaim(true, opt)}>
+                      {L.chiBtn(opt.tiles.map((t) => tileSymbol(t)).join(" "))}
+                    </button>
+                  ))}
+                  <button tabIndex={-1} style={S.claimDecline} onClick={() => handlePlayerClaim(false)}>{L.pass}</button>
+                </>
+              ) : (
+                <>
+                  <button tabIndex={-1} style={S.claimAccept} onClick={() => handlePlayerClaim(true)}>
+                    {state.awaitingPlayerClaim.type === "hu" ? L.huBtn : L.claimBtn(L.actionLabel[state.awaitingPlayerClaim.type])}
+                  </button>
+                  <button tabIndex={-1} style={S.claimDecline} onClick={() => handlePlayerClaim(false)}>{L.pass}</button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---- PLAYER AREA ---- */}
+      <div style={S.playerSection}>
+        {/* Action bar */}
+        <div style={S.actionBar}>
+          {canDraw && (
+            <button tabIndex={-1} style={S.actionBtn} onClick={handlePlayerDraw}>{L.drawTile}</button>
+          )}
+          {canDiscard && selectedTileIdx !== null && (
+            <button tabIndex={-1} style={S.actionBtnDanger} onClick={() => handlePlayerDiscard(selectedTileIdx)}>
+              {L.discardSel}
+            </button>
+          )}
+          {canHu && (
+            <button tabIndex={-1} style={S.actionBtnWin} onClick={handleDeclareHu}>{L.declareHu}</button>
+          )}
+          {concealedGangs.map((g, i) => (
+            <button tabIndex={-1} key={i} style={S.actionBtn} onClick={() => handleDeclareConcealedGang(g.tiles)}>
+              {L.gangBtn(TN(g.tiles[0]))}
+            </button>
+          ))}
+        </div>
+
+        {/* Open melds */}
+        {player.openMelds.length > 0 && (
+          <div style={S.playerMeldsRow}>
+            {player.openMelds.map((m, mi) => (
+              <div key={mi} style={S.playerMeldGroup}>
+                {m.tiles.map((t, ti) => (
+                  <span key={ti} style={{ ...S.playerMeldTile, ...(m.concealed ? S.concealedTile : {}) }}>
+                    {m.concealed ? "🀫" : tileSymbol(t)}
+                  </span>
+                ))}
+                <span style={S.meldTag}>{m.claimed ? L.open : L.hidden}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Hand */}
+        <div style={S.playerHand}>
+          {player.hand.map((t, i) => {
+            const selected = selectedTileIdx === i;
+            return (
+              <button
+                tabIndex={-1}
+                key={t.id}
+                style={{
+                  ...S.handTile,
+                  ...(selected ? S.handTileSelected : {}),
+                  ...(canDiscard ? S.handTileClickable : {}),
+                }}
+                onClick={() => {
+                  if (canDiscard) {
+                    if (selected) handlePlayerDiscard(i);
+                    else setSelectedTileIdx(i);
+                  }
+                }}
+                title={TN(t)}
+              >
+                <span style={S.tileEmoji}>{tileSymbol(t)}</span>
+                <span style={S.tileLabel}>{TN(t)}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ---- ROUND OVER OVERLAY ---- */}
+      {roundOver && (
+        <div style={S.overlay}>
+          <div style={S.roundOverBox}>
+            {state.winner !== null ? (
+              <>
+                <h2 style={S.winTitle}>
+                  {state.winner === PLAYER_IDX ? L.youWin : L.otherWins(SL[state.winner])}
+                </h2>
+                <div style={S.winningHand}>
+                  <p style={S.winHandLabel}>{L.winHand}</p>
+                  <div style={S.winTilesRow}>
+                    {state.players[state.winner].openMelds.map((m, mi) => (
+                      <div key={`m${mi}`} style={S.winMeldGroup}>
+                        {m.tiles.map((t, ti) => (
+                          <span key={ti} style={S.winTile}>{tileSymbol(t)}</span>
+                        ))}
+                      </div>
+                    ))}
+                    <div style={S.winMeldGroup}>
+                      {state.players[state.winner].hand.map((t, ti) => (
+                        <span key={ti} style={S.winTile}>{tileSymbol(t)}</span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <h2 style={S.winTitle}>{L.drawExhausted}</h2>
+            )}
+            {gameOver ? (
+              <div>
+                <p style={S.gameOverText}>{L.gameComplete}</p>
+                <button tabIndex={-1} style={S.startBtn} onClick={() => setShowMenu(true)}>{L.backMenu}</button>
+              </div>
+            ) : (
+              <button tabIndex={-1} style={S.startBtn} onClick={nextRound}>{L.nextRound}</button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// STYLES
+// ============================================================
+
+const gold = "#c9a961";
+const goldDim = "rgba(201,169,97,0.3)";
+const green = "#8aad8a";
+const greenDim = "#5a7a5a";
+const bg = "#0d1f17";
+const bgLight = "#1a3a2a";
+const felt = "linear-gradient(160deg, #1a3a2a 0%, #0d1f17 40%, #142e20 100%)";
+
+function makeStyles(vw, vh) {
+  const baseW = 1100, baseH = 750;
+  const scale = Math.min(Math.max(Math.min(vw / baseW, vh / baseH), 0.5), 1.5);
+  const s = (v) => Math.round(v * scale);
+  // Dampened scale for text (don't shrink below 0.7x)
+  const ts = (v) => Math.round(v * Math.max(scale, 0.7));
+  // Small/compact: for tiny screen, shrink more aggressively
+  const isCompact = vw < 700 || vh < 550;
+
+  return {
+  // ---- MENU ----
+  menuContainer: {
+    minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
+    background: felt, fontFamily: "'Georgia', serif", padding: s(16),
+  },
+  menuCard: {
+    background: "rgba(26,58,42,0.92)", border: `2px solid ${gold}`, borderRadius: s(14),
+    padding: `${s(48)}px ${s(44)}px`, textAlign: "center", maxWidth: s(440), width: "100%",
+    boxShadow: "0 24px 80px rgba(0,0,0,0.6), inset 0 1px 0 rgba(201,169,97,0.15)",
+  },
+  menuTitle: { fontSize: s(52), color: gold, margin: 0, letterSpacing: s(6), textShadow: "0 3px 12px rgba(0,0,0,0.6)" },
+  menuSubtitle: { color: green, fontSize: ts(13), marginTop: s(8), marginBottom: s(36), letterSpacing: s(3), textTransform: "uppercase" },
+  menuSetting: { marginBottom: s(28) },
+  menuLabel: { color: gold, display: "block", marginBottom: s(12), fontSize: ts(14), letterSpacing: 1 },
+  windButtons: { display: "flex", gap: s(8), justifyContent: "center", flexWrap: "wrap" },
+  windBtn: {
+    background: "rgba(201,169,97,0.08)", border: `1px solid ${goldDim}`, color: green,
+    padding: `${s(10)}px ${s(16)}px`, borderRadius: s(6), cursor: "pointer", outline: "none", fontSize: ts(13), transition: "all 0.2s",
+  },
+  windBtnActive: { background: "rgba(201,169,97,0.22)", borderColor: gold, color: gold },
+  startBtn: {
+    background: `linear-gradient(135deg, ${gold}, #a8873d)`, color: bg, border: "none",
+    padding: `${s(14)}px ${s(44)}px`, borderRadius: s(8), fontSize: ts(18), fontWeight: "bold", cursor: "pointer", outline: "none", letterSpacing: 1,
+  },
+  langBtn: {
+    background: "rgba(201,169,97,0.1)", border: `1px solid ${goldDim}`, color: gold,
+    padding: `${s(6)}px ${s(16)}px`, borderRadius: s(6), cursor: "pointer", outline: "none", fontSize: ts(14), fontWeight: "bold", letterSpacing: 1,
+  },
+  menuBtnRow: { display: "flex", gap: s(12), justifyContent: "center", alignItems: "center", flexWrap: "wrap" },
+  rulesBox: {
+    marginTop: s(32), padding: `${s(18)}px ${s(22)}px`, background: "rgba(0,0,0,0.25)", borderRadius: s(8),
+    border: "1px solid rgba(201,169,97,0.12)", textAlign: "left",
+  },
+  rulesTitle: { color: gold, margin: `0 0 ${s(12)}px 0`, fontSize: ts(14), letterSpacing: 1 },
+  ruleText: { color: green, margin: `${s(6)}px 0`, fontSize: ts(13), lineHeight: 1.6 },
+
+  // ---- GAME SHELL ----
+  gameContainer: {
+    height: "100vh", display: "flex", flexDirection: "column",
+    background: felt, fontFamily: "'Georgia', serif", color: "#d4c9a8", overflow: "hidden",
+  },
+
+  // ---- TOP BAR ----
+  topBar: {
+    display: "flex", justifyContent: "space-between", alignItems: "center",
+    padding: `${s(6)}px ${s(16)}px`, borderBottom: `1px solid rgba(201,169,97,0.15)`,
+    background: "rgba(0,0,0,0.3)", flexShrink: 0, flexWrap: "wrap", gap: s(6),
+  },
+  topBarLeft: { display: "flex", gap: s(12), alignItems: "center", flexWrap: "wrap" },
+  topBarRight: { display: "flex", gap: s(10), alignItems: "center", flexWrap: "wrap" },
+  roundInfo: { color: gold, fontSize: ts(13), letterSpacing: 1, fontWeight: "bold" },
+  wallCount: { color: green, fontSize: ts(12) },
+  statusText: { color: greenDim, fontSize: ts(12), fontStyle: "italic" },
+  statusTextYou: { color: gold, fontSize: ts(12), fontWeight: "bold" },
+  menuBtn: {
+    background: "none", border: `1px solid ${goldDim}`, color: gold,
+    padding: `${s(3)}px ${s(10)}px`, borderRadius: s(4), cursor: "pointer", outline: "none", fontSize: ts(14),
+  },
+
+  // ---- MAIN BOARD ----
+  mainBoard: {
+    flex: 1, display: "flex", gap: s(8), padding: `0 ${s(10)}px ${s(6)}px`,
+    overflow: "hidden", minHeight: 0,
+    flexDirection: isCompact ? "column" : "row",
+  },
+
+  // ---- OPPONENTS ROW ----
+  opponentsRow: {
+    flexShrink: 0, display: "flex", gap: s(6), justifyContent: "center",
+    padding: `${s(6)}px ${s(10)}px`, borderBottom: `1px solid rgba(201,169,97,0.08)`,
+    overflowX: "auto", flexWrap: isCompact ? "wrap" : "nowrap",
+  },
+
+  // Opponent strip
+  oppStrip: {
+    padding: `${s(5)}px ${s(10)}px`, borderRadius: s(6), border: `1px solid rgba(201,169,97,0.08)`,
+    background: "rgba(0,0,0,0.15)", transition: "all 0.3s", minWidth: s(120), maxWidth: s(240),
+    flex: "1 1 0",
+  },
+  oppStripActive: {
+    background: "rgba(201,169,97,0.08)", borderColor: "rgba(201,169,97,0.25)",
+    boxShadow: "0 0 12px rgba(201,169,97,0.1)",
+  },
+  oppHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: s(3) },
+  oppName: { color: green, fontSize: ts(10), letterSpacing: 1, textTransform: "uppercase", fontWeight: "bold" },
+  oppNameActive: { color: gold },
+  turnIndicator: { color: gold, fontSize: ts(9) },
+  oppTileCount: { color: greenDim, fontSize: ts(10) },
+  personalityTag: {
+    fontSize: ts(8), color: "#8a7a5a", letterSpacing: 0.5,
+    background: "rgba(201,169,97,0.08)", borderRadius: s(3),
+    padding: `1px ${s(4)}px`, alignSelf: "flex-start",
+  },
+  oppMeldsRow: { display: "flex", gap: s(3), flexWrap: "wrap", marginTop: s(3) },
+  oppMeldGroup: {
+    display: "flex", gap: 1, background: "rgba(201,169,97,0.06)", padding: `${s(2)}px ${s(3)}px`,
+    borderRadius: s(3), border: "1px solid rgba(201,169,97,0.12)",
+  },
+  oppMeldTile: { fontSize: s(20), background: "rgba(180,170,150,0.45)", borderRadius: s(3), padding: "2px 3px", display: "inline-flex", alignItems: "center", justifyContent: "center", transform: "translateY(-3px)" },
+  concealedTile: { opacity: 0.5, background: "rgba(60,80,60,0.7)" },
+
+  // Discard pool
+  discardPoolScroll: {
+    flex: isCompact ? "1 1 auto" : "1 1 75%", overflowY: "auto", minWidth: 0,
+    minHeight: isCompact ? 0 : undefined,
+  },
+  discardPoolContainer: {
+    width: "100%", background: "rgba(0,0,0,0.25)",
+    border: `1px solid rgba(201,169,97,0.15)`, borderRadius: s(10), padding: `${s(12)}px ${s(16)}px`,
+    boxShadow: "inset 0 2px 20px rgba(0,0,0,0.3)",
+  },
+  discardPoolHeader: {
+    display: "flex", justifyContent: "space-between", alignItems: "center",
+    marginBottom: s(8), flexWrap: "wrap", gap: s(6),
+  },
+  discardPoolTitle: { color: gold, fontSize: ts(12), letterSpacing: 2, textTransform: "uppercase", fontWeight: "bold" },
+  lastDiscardBadge: {
+    color: "#d4c9a8", fontSize: ts(12), background: "rgba(201,169,97,0.12)",
+    padding: `${s(4)}px ${s(10)}px`, borderRadius: s(16), border: `1px solid rgba(201,169,97,0.2)`,
+  },
+  lastDiscardEmoji: { fontSize: s(26), verticalAlign: "middle", background: "rgba(180,170,150,0.45)", borderRadius: s(3), padding: "1px 3px" },
+  lastDiscardFrom: { color: greenDim, fontSize: ts(10) },
+  discardPoolGrid: {
+    display: "grid", gridTemplateColumns: isCompact ? "1fr" : "1fr 1fr", gap: s(6),
+  },
+  discardPlayerSection: {
+    background: "rgba(255,255,255,0.02)", borderRadius: s(6), padding: `${s(5)}px ${s(8)}px`,
+    border: "1px solid rgba(201,169,97,0.06)", minHeight: s(40),
+  },
+  discardPlayerLabel: {
+    color: greenDim, fontSize: ts(10), textTransform: "uppercase", letterSpacing: 1,
+    marginBottom: s(4), fontWeight: "bold",
+  },
+  discardTilesWrap: { display: "flex", flexWrap: "wrap", gap: s(3), alignItems: "center" },
+  discardEmpty: { color: "rgba(201,169,97,0.15)", fontSize: ts(12) },
+  discardTile: {
+    fontSize: s(36), lineHeight: 1, cursor: "default", transition: "all 0.15s",
+    borderRadius: s(4), padding: `${s(3)}px ${s(3)}px`, background: "rgba(180,170,150,0.45)",
+    display: "inline-flex", alignItems: "center", justifyContent: "center", verticalAlign: "middle",
+    transform: "translateY(-3px)",
+  },
+  discardTileLatest: {
+    background: "rgba(200,190,165,0.6)", boxShadow: `0 0 ${s(8)}px rgba(201,169,97,0.35)`,
+    borderRadius: s(4),
+  },
+
+  // Log panel
+  logPanel: {
+    flex: isCompact ? "0 0 100px" : `0 0 ${s(180)}px`, overflowY: "auto", padding: `${s(8)}px ${s(10)}px`,
+    background: "rgba(0,0,0,0.2)", borderRadius: s(8),
+    border: `1px solid rgba(201,169,97,0.1)`,
+  },
+  logEntry: { color: greenDim, fontSize: ts(10), padding: `${s(2)}px 0`, fontFamily: "monospace", lineHeight: 1.5 },
+
+  // ---- PLAYER SECTION ----
+  playerSection: {
+    flexShrink: 0, borderTop: `2px solid rgba(201,169,97,0.2)`,
+    background: "linear-gradient(to top, rgba(0,0,0,0.3), rgba(0,0,0,0.1))",
+    padding: `${s(6)}px ${s(16)}px ${s(10)}px`, overflow: "hidden", position: "relative",
+  },
+
+  // Action bar
+  actionBar: {
+    display: "flex", gap: s(8), justifyContent: "center", alignItems: "center",
+    marginBottom: s(6), minHeight: s(36), flexWrap: "wrap",
+  },
+  actionBtn: {
+    background: "rgba(201,169,97,0.12)", border: `1px solid rgba(201,169,97,0.35)`,
+    color: gold, padding: `${s(7)}px ${s(18)}px`, borderRadius: s(6), cursor: "pointer", outline: "none",
+    fontSize: ts(14), fontWeight: "bold", letterSpacing: 0.5, transition: "all 0.15s",
+    minHeight: s(38), touchAction: "manipulation",
+  },
+  actionBtnDanger: {
+    background: "rgba(180,80,80,0.2)", border: "1px solid rgba(200,100,100,0.35)",
+    color: "#d4a0a0", padding: `${s(7)}px ${s(18)}px`, borderRadius: s(6), cursor: "pointer", outline: "none", fontSize: ts(14),
+    minHeight: s(38), touchAction: "manipulation",
+  },
+  actionBtnWin: {
+    background: `linear-gradient(135deg, ${gold}, #a8873d)`, border: "none", color: bg,
+    padding: `${s(9)}px ${s(24)}px`, borderRadius: s(6), cursor: "pointer", outline: "none", fontSize: ts(16), fontWeight: "bold",
+    letterSpacing: 1, boxShadow: `0 0 ${s(24)}px rgba(201,169,97,0.35)`,
+    minHeight: s(38), touchAction: "manipulation",
+  },
+
+  // Player melds
+  playerMeldsRow: { display: "flex", gap: s(8), justifyContent: "center", marginBottom: s(6), flexWrap: "wrap" },
+  playerMeldGroup: {
+    display: "flex", gap: s(2), background: "rgba(201,169,97,0.07)", padding: `${s(3)}px ${s(6)}px`,
+    borderRadius: s(6), border: "1px solid rgba(201,169,97,0.15)", alignItems: "center",
+  },
+  playerMeldTile: { fontSize: s(46), background: "rgba(180,170,150,0.45)", borderRadius: s(4), padding: `${s(2)}px ${s(3)}px`, display: "inline-flex", alignItems: "center", justifyContent: "center", transform: "translateY(-3px)" },
+  meldTag: { fontSize: ts(8), color: greenDim, marginLeft: s(4), textTransform: "uppercase", letterSpacing: 1 },
+
+  // Player hand
+  playerHand: {
+    display: "flex", gap: s(5), justifyContent: "center", flexWrap: "wrap",
+  },
+  handTile: {
+    display: "flex", flexDirection: "column", alignItems: "center",
+    padding: `${s(8)}px ${s(8)}px ${s(5)}px`, background: "rgba(220,210,190,0.75)",
+    border: `2px solid rgba(201,169,97,0.3)`, borderRadius: s(7),
+    cursor: "default", transition: "all 0.15s ease-out", minWidth: s(62),
+    boxShadow: "0 2px 6px rgba(0,0,0,0.3)",
+  },
+  handTileSelected: {
+    background: "rgba(235,225,200,0.85)", borderColor: gold,
+    transform: `translateY(-${s(12)}px)`, boxShadow: `0 ${s(8)}px ${s(20)}px rgba(201,169,97,0.4)`,
+  },
+  handTileClickable: { cursor: "pointer", outline: "none" },
+  tileEmoji: { fontSize: s(52), lineHeight: 1.1 },
+  tileLabel: { fontSize: ts(10), color: "#5a4a2a", marginTop: s(2), textTransform: "capitalize", whiteSpace: "nowrap" },
+
+  // ---- OVERLAYS ----
+  overlay: {
+    position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+    background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center",
+    justifyContent: "center", zIndex: 100, backdropFilter: "blur(4px)", padding: s(16),
+  },
+  // ---- CLAIM BANNER ----
+  claimBanner: {
+    flexShrink: 0, position: "relative", zIndex: 10,
+    background: "linear-gradient(to bottom, rgba(26,58,42,0.95), rgba(13,31,23,0.97))",
+    borderTop: `1px solid ${gold}`, borderBottom: `1px solid ${gold}`,
+    boxShadow: "0 4px 20px rgba(201,169,97,0.15), 0 -4px 20px rgba(201,169,97,0.15)",
+    padding: `${s(8)}px ${s(16)}px`,
+  },
+  claimBannerInner: {
+    display: "flex", alignItems: "center", justifyContent: "space-between",
+    maxWidth: s(900), margin: "0 auto", gap: s(14), flexWrap: "wrap",
+  },
+  claimBannerLeft: {
+    display: "flex", alignItems: "center", gap: s(10),
+  },
+  claimBannerText: { display: "flex", flexDirection: "column", gap: 2 },
+  claimTitle: { color: "#d4c9a8", fontSize: ts(14), margin: 0, lineHeight: 1.4 },
+  claimTileBig: { fontSize: s(56), lineHeight: 1, background: "rgba(180,170,150,0.45)", borderRadius: s(6), padding: `${s(3)}px ${s(5)}px`, display: "inline-flex", alignItems: "center", justifyContent: "center", transform: "translateY(-3px)" },
+  claimQuestion: { color: gold, fontSize: ts(13), margin: 0 },
+  claimBannerBtns: { display: "flex", gap: s(6), alignItems: "center", flexWrap: "wrap" },
+  claimAccept: {
+    background: `linear-gradient(135deg, ${gold}, #a8873d)`, color: bg, border: "none",
+    padding: `${s(10)}px ${s(20)}px`, borderRadius: s(6), cursor: "pointer", outline: "none", fontSize: ts(14), fontWeight: "bold",
+    whiteSpace: "nowrap", minHeight: s(38), touchAction: "manipulation",
+  },
+  claimDecline: {
+    background: "rgba(255,255,255,0.08)", border: `1px solid ${goldDim}`, color: green,
+    padding: `${s(10)}px ${s(20)}px`, borderRadius: s(6), cursor: "pointer", outline: "none", fontSize: ts(13), whiteSpace: "nowrap",
+    minHeight: s(38), touchAction: "manipulation",
+  },
+
+  // Round over
+  roundOverBox: {
+    background: `linear-gradient(145deg, ${bgLight}, ${bg})`, border: `2px solid ${gold}`,
+    borderRadius: s(14), padding: `${s(28)}px ${s(36)}px`, textAlign: "center", maxWidth: s(500), width: "100%",
+    boxShadow: "0 24px 80px rgba(0,0,0,0.6)",
+  },
+  winTitle: { color: gold, fontSize: s(28), margin: `0 0 ${s(16)}px` },
+  winningHand: { marginBottom: s(20) },
+  winHandLabel: { color: green, fontSize: ts(11), textTransform: "uppercase", letterSpacing: 2, marginBottom: s(8) },
+  winTilesRow: { display: "flex", gap: s(6), justifyContent: "center", flexWrap: "wrap" },
+  winMeldGroup: {
+    display: "flex", gap: s(2), background: "rgba(201,169,97,0.08)", padding: `${s(4)}px ${s(6)}px`,
+    borderRadius: s(6), border: "1px solid rgba(201,169,97,0.2)",
+  },
+  winTile: { fontSize: s(36), background: "rgba(180,170,150,0.45)", borderRadius: s(4), padding: `${s(2)}px ${s(3)}px`, display: "inline-flex", alignItems: "center", justifyContent: "center", transform: "translateY(-3px)" },
+  gameOverText: { color: gold, fontSize: ts(16), marginBottom: s(16) },
+  };
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  React.createElement(React.StrictMode, null, React.createElement(MahjongGame))
+);
+</script>
+</body>
+</html>
