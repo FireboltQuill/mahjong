@@ -28,6 +28,20 @@ const WINDS = ["east", "south", "west", "north"];
 const DRAGONS = ["red", "green", "white"];
 
 // Tile display: text-based rendering (avoids macOS Color Emoji white tile face)
+// Tile image URLs (public domain, FluffyStuff/riichi-mahjong-tiles CC0)
+const TILE_IMG_BASE = "https://cdn.jsdelivr.net/gh/FluffyStuff/riichi-mahjong-tiles@master/Regular/";
+const TILE_IMG = {
+  bamboo: { 1: "Sou1", 2: "Sou2", 3: "Sou3", 4: "Sou4", 5: "Sou5", 6: "Sou6", 7: "Sou7", 8: "Sou8", 9: "Sou9" },
+  characters: { 1: "Man1", 2: "Man2", 3: "Man3", 4: "Man4", 5: "Man5", 6: "Man6", 7: "Man7", 8: "Man8", 9: "Man9" },
+  dots: { 1: "Pin1", 2: "Pin2", 3: "Pin3", 4: "Pin4", 5: "Pin5", 6: "Pin6", 7: "Pin7", 8: "Pin8", 9: "Pin9" },
+  wind: { east: "Ton", south: "Nan", west: "Shaa", north: "Pei" },
+  dragon: { red: "Chun", green: "Hatsu", white: "Haku" },
+};
+function tileImgUrl(t) {
+  const name = (t.suit === "wind" || t.suit === "dragon") ? TILE_IMG[t.suit][t.honor] : TILE_IMG[t.suit][t.rank];
+  return TILE_IMG_BASE + name + ".svg";
+}
+
 const TILE_SYMBOLS = {
   bamboo: ["", "🀐", "🀑", "🀒", "🀓", "🀔", "🀕", "🀖", "🀗", "🀘"],
   characters: ["", "🀇", "🀈", "🀉", "🀊", "🀋", "🀌", "🀍", "🀎", "🀏"],
@@ -35,6 +49,22 @@ const TILE_SYMBOLS = {
   wind: { east: "🀀", south: "🀁", west: "🀂", north: "🀃" },
   dragon: { red: "🀄", green: "🀅", white: "🀆" },
 };
+
+// Text-based tile display
+const SUIT_CHAR = { bamboo: "条", characters: "万", dots: "饼" };
+const SUIT_COLOR = { bamboo: "#2d8a4e", characters: "#c43232", dots: "#2266aa" };
+function tileDisplay(t) {
+  if (t.suit === "wind") {
+    const labels = { east: "東", south: "南", west: "西", north: "北" };
+    return { top: labels[t.honor], color: "#4a3a8a" };
+  }
+  if (t.suit === "dragon") {
+    const labels = { red: "中", green: "發", white: "白" };
+    const colors = { red: "#c43232", green: "#2d8a4e", white: "#555" };
+    return { top: labels[t.honor], color: colors[t.honor] };
+  }
+  return { top: String(t.rank), bot: SUIT_CHAR[t.suit], color: SUIT_COLOR[t.suit] };
+}
 
 // ============================================================
 // LOCALIZATION
@@ -1525,7 +1555,7 @@ function MahjongGame() {
               <div key={mi} style={S.oppMeldGroup}>
                 {m.tiles.map((t, ti) => (
                   <span key={ti} style={{ ...S.oppMeldTile, ...(m.concealed ? S.concealedTile : {}) }}>
-                    {m.concealed ? "🀫" : tileSymbol(t)}
+                    {m.concealed ? "🀫" : <img src={tileImgUrl(t)} alt={TN(t)} style={{height: "100%"}} />}
                   </span>
                 ))}
               </div>
@@ -1539,6 +1569,27 @@ function MahjongGame() {
   // ============================================================
   // RENDER
   // ============================================================
+
+  // ============================================================
+  // TILE FACE RENDERER (text-based, no emoji)
+  // ============================================================
+  function TileFace({ tile, fontSize }) {
+    const d = tileDisplay(tile);
+    const fs = fontSize || 20;
+    const topFs = d.bot ? fs * 0.65 : fs * 0.75;
+    const botFs = fs * 0.38;
+    return (
+      <span style={{
+        display: "inline-flex", flexDirection: "column", alignItems: "center",
+        justifyContent: "center", lineHeight: 1, color: d.color,
+        fontWeight: "bold", fontFamily: "'Georgia', 'Songti SC', serif",
+        width: "1em", height: "1em", fontSize: fs,
+      }}>
+        <span style={{ fontSize: topFs, lineHeight: 1.1 }}>{d.top}</span>
+        {d.bot && <span style={{ fontSize: botFs, lineHeight: 1, marginTop: -1 }}>{d.bot}</span>}
+      </span>
+    );
+  }
 
   // ============================================================
   // HELP OVERLAY
@@ -1752,7 +1803,7 @@ function MahjongGame() {
                   <span style={S.discardPoolTitle}>{L.poolTitle}</span>
                   {state.lastDiscard && (
                     <span style={S.lastDiscardBadge}>
-                      {L.latest} <span style={S.lastDiscardEmoji}>{tileSymbol(state.lastDiscard)}</span> {TN(state.lastDiscard)}
+                      {L.latest} <span style={S.lastDiscardEmoji}><img src={tileImgUrl(state.lastDiscard)} alt="" style={{height: "100%"}} /></span> {TN(state.lastDiscard)}
                       <span style={S.lastDiscardFrom}> — {SL[state.lastDiscarder]}</span>
                     </span>
                   )}
@@ -1764,7 +1815,7 @@ function MahjongGame() {
                       {state.players[2].discards.length === 0 && <span style={S.discardEmpty}>—</span>}
                       {state.players[2].discards.map((t, i) => {
                         const isLast = state.lastDiscard && t.id === state.lastDiscard.id;
-                        return <span key={i} style={{ ...S.discardTile, ...(isLast ? S.discardTileLatest : {}) }} title={TN(t)}>{tileSymbol(t)}</span>;
+                        return <span key={i} style={{ ...S.discardTile, ...(isLast ? S.discardTileLatest : {}) }} title={TN(t)}><img src={tileImgUrl(t)} alt={TN(t)} style={{height: "100%"}} /></span>;
                       })}
                     </div>
                   </div>
@@ -1774,7 +1825,7 @@ function MahjongGame() {
                       {state.players[3].discards.length === 0 && <span style={S.discardEmpty}>—</span>}
                       {state.players[3].discards.map((t, i) => {
                         const isLast = state.lastDiscard && t.id === state.lastDiscard.id;
-                        return <span key={i} style={{ ...S.discardTile, ...(isLast ? S.discardTileLatest : {}) }} title={TN(t)}>{tileSymbol(t)}</span>;
+                        return <span key={i} style={{ ...S.discardTile, ...(isLast ? S.discardTileLatest : {}) }} title={TN(t)}><img src={tileImgUrl(t)} alt={TN(t)} style={{height: "100%"}} /></span>;
                       })}
                     </div>
                   </div>
@@ -1784,7 +1835,7 @@ function MahjongGame() {
                       {state.players[1].discards.length === 0 && <span style={S.discardEmpty}>—</span>}
                       {state.players[1].discards.map((t, i) => {
                         const isLast = state.lastDiscard && t.id === state.lastDiscard.id;
-                        return <span key={i} style={{ ...S.discardTile, ...(isLast ? S.discardTileLatest : {}) }} title={TN(t)}>{tileSymbol(t)}</span>;
+                        return <span key={i} style={{ ...S.discardTile, ...(isLast ? S.discardTileLatest : {}) }} title={TN(t)}><img src={tileImgUrl(t)} alt={TN(t)} style={{height: "100%"}} /></span>;
                       })}
                     </div>
                   </div>
@@ -1794,7 +1845,7 @@ function MahjongGame() {
                       {state.players[0].discards.length === 0 && <span style={S.discardEmpty}>—</span>}
                       {state.players[0].discards.map((t, i) => {
                         const isLast = state.lastDiscard && t.id === state.lastDiscard.id;
-                        return <span key={i} style={{ ...S.discardTile, ...(isLast ? S.discardTileLatest : {}) }} title={TN(t)}>{tileSymbol(t)}</span>;
+                        return <span key={i} style={{ ...S.discardTile, ...(isLast ? S.discardTileLatest : {}) }} title={TN(t)}><img src={tileImgUrl(t)} alt={TN(t)} style={{height: "100%"}} /></span>;
                       })}
                     </div>
                   </div>
@@ -1815,7 +1866,7 @@ function MahjongGame() {
         <div style={S.claimBanner}>
           <div style={S.claimBannerInner}>
             <div style={S.claimBannerLeft}>
-              <span style={S.claimTileBig}>{tileSymbol(state.awaitingPlayerClaim.tile)}</span>
+              <span style={S.claimTileBig}><img src={tileImgUrl(state.awaitingPlayerClaim.tile)} alt="" style={{height: "100%"}} /></span>
               <div style={S.claimBannerText}>
                 <p style={S.claimTitle}>
                   {state.lastDiscarder !== null && L.discardedBy(SL[state.lastDiscarder])}
@@ -1832,7 +1883,7 @@ function MahjongGame() {
                 <>
                   {state.awaitingPlayerClaim.options.map((opt, i) => (
                     <button tabIndex={-1} key={i} style={S.claimAccept} onClick={() => handlePlayerClaim(true, opt)}>
-                      {L.chiBtn(opt.tiles.map((t) => tileSymbol(t)).join(" "))}
+                      {L.chiBtn(opt.tiles.map((t) => TN(t)).join(" "))}
                     </button>
                   ))}
                   <button tabIndex={-1} style={S.claimDecline} onClick={() => handlePlayerClaim(false)}>{L.pass}</button>
@@ -1879,7 +1930,7 @@ function MahjongGame() {
               <div key={mi} style={S.playerMeldGroup}>
                 {m.tiles.map((t, ti) => (
                   <span key={ti} style={{ ...S.playerMeldTile, ...(m.concealed ? S.concealedTile : {}) }}>
-                    {m.concealed ? "🀫" : tileSymbol(t)}
+                    {m.concealed ? "🀫" : <img src={tileImgUrl(t)} alt={TN(t)} style={{height: "100%"}} />}
                   </span>
                 ))}
                 <span style={S.meldTag}>{m.claimed ? L.open : L.hidden}</span>
@@ -1909,7 +1960,7 @@ function MahjongGame() {
                 }}
                 title={TN(t)}
               >
-                <span style={S.tileEmoji}>{tileSymbol(t)}</span>
+                <img src={tileImgUrl(t)} alt={TN(t)} style={S.tileImg} />
                 <span style={S.tileLabel}>{TN(t)}</span>
               </button>
             );
@@ -1960,7 +2011,7 @@ function MahjongGame() {
                         return pairs.map((pair, pi) => (
                           <div key={pi} style={S.winMeldGroup}>
                             {pair.map((t, ti) => (
-                              <span key={ti} style={S.winTile}>{tileSymbol(t)}</span>
+                              <span key={ti} style={S.winTile}><img src={tileImgUrl(t)} alt={TN(t)} style={{height: "100%"}} /></span>
                             ))}
                           </div>
                         ));
@@ -1970,13 +2021,13 @@ function MahjongGame() {
                         {winner.openMelds.map((m, mi) => (
                           <div key={`m${mi}`} style={S.winMeldGroup}>
                             {m.tiles.map((t, ti) => (
-                              <span key={ti} style={S.winTile}>{tileSymbol(t)}</span>
+                              <span key={ti} style={S.winTile}><img src={tileImgUrl(t)} alt={TN(t)} style={{height: "100%"}} /></span>
                             ))}
                           </div>
                         ))}
                         <div style={S.winMeldGroup}>
                           {winner.hand.map((t, ti) => (
-                            <span key={ti} style={S.winTile}>{tileSymbol(t)}</span>
+                            <span key={ti} style={S.winTile}><img src={tileImgUrl(t)} alt={TN(t)} style={{height: "100%"}} /></span>
                           ))}
                         </div>
                       </>
@@ -2029,10 +2080,8 @@ function makeStyles(vw, vh) {
 
   // Shared tile appearance — single source of truth
   const tileBase = {
-    background: "#f0ebe0",
-    border: `2px solid rgba(201,169,97,0.3)`,
-    borderRadius: s(6),
-    boxShadow: "0 2px 6px rgba(0,0,0,0.3)",
+    display: "inline-block",
+    verticalAlign: "middle",
   };
 
   return {
@@ -2166,7 +2215,7 @@ function makeStyles(vw, vh) {
     display: "flex", gap: 1, background: "transparent", padding: `${s(2)}px ${s(3)}px`,
     borderRadius: s(3), border: "none",
   },
-  oppMeldTile: { ...tileBase, fontSize: s(20), padding: "1px 2px" },
+  oppMeldTile: { ...tileBase, height: s(32) },
   concealedTile: { opacity: 0.5, background: "rgba(60,80,60,0.7)" },
 
   // Discard pool
@@ -2183,7 +2232,7 @@ function makeStyles(vw, vh) {
     color: "#d4c9a8", fontSize: ts(12), background: "rgba(201,169,97,0.12)",
     padding: `${s(4)}px ${s(10)}px`, borderRadius: s(16), border: `1px solid rgba(201,169,97,0.2)`,
   },
-  lastDiscardEmoji: { ...tileBase, fontSize: s(20), verticalAlign: "middle", padding: "1px 2px" },
+  lastDiscardEmoji: { ...tileBase, height: s(28), verticalAlign: "middle" },
   lastDiscardFrom: { color: greenDim, fontSize: ts(10) },
   discardTableLayout: {
     display: "grid",
@@ -2212,12 +2261,10 @@ function makeStyles(vw, vh) {
   discardTilesWrap: { display: "flex", flexWrap: "wrap", gap: s(3), justifyContent: "center" },
   discardEmpty: { color: "rgba(201,169,97,0.15)", fontSize: ts(12) },
   discardTile: {
-    ...tileBase, fontSize: s(22), lineHeight: 1, cursor: "default", transition: "all 0.15s",
-    padding: `${s(2)}px ${s(2)}px`,
+    ...tileBase, height: s(40), cursor: "default", transition: "all 0.15s",
   },
   discardTileLatest: {
-    background: "#f5eed5", boxShadow: `0 0 ${s(8)}px rgba(201,169,97,0.35)`,
-    borderRadius: s(4),
+    filter: "brightness(1.1)", boxShadow: `0 0 ${s(8)}px rgba(201,169,97,0.5)`,
   },
 
   logEntry: { color: greenDim, fontSize: ts(10), padding: `${s(2)}px 0`, fontFamily: "monospace", lineHeight: 1.5 },
@@ -2258,7 +2305,7 @@ function makeStyles(vw, vh) {
     display: "flex", gap: s(2), background: "transparent", padding: `${s(3)}px ${s(6)}px`,
     borderRadius: s(6), border: "none", alignItems: "center",
   },
-  playerMeldTile: { ...tileBase, fontSize: s(36), padding: `${s(2)}px ${s(3)}px` },
+  playerMeldTile: { ...tileBase, height: s(56) },
   meldTag: { fontSize: ts(8), color: greenDim, marginLeft: s(4), textTransform: "uppercase", letterSpacing: 1 },
 
   // Player hand
@@ -2266,16 +2313,16 @@ function makeStyles(vw, vh) {
     display: "flex", gap: s(4), justifyContent: "center", flexWrap: "wrap",
   },
   handTile: {
-    ...tileBase, display: "flex", flexDirection: "column", alignItems: "center",
-    padding: `${s(6)}px ${s(6)}px ${s(4)}px`,
-    cursor: "default", transition: "all 0.15s ease-out", minWidth: s(52),
+    display: "flex", flexDirection: "column", alignItems: "center",
+    padding: `${s(2)}px`, background: "transparent",
+    border: "none", borderRadius: s(6),
+    cursor: "default", transition: "all 0.15s ease-out",
   },
   handTileSelected: {
-    background: "#f5eed5", borderColor: gold,
-    transform: `translateY(-${s(10)}px)`, boxShadow: `0 ${s(8)}px ${s(20)}px rgba(201,169,97,0.4)`,
+    transform: `translateY(-${s(10)}px)`, filter: "brightness(1.15)",
   },
   handTileClickable: { cursor: "pointer", outline: "none" },
-  tileEmoji: { fontSize: s(40), lineHeight: 1.1 },
+  tileImg: { height: s(70), display: "block" },
   tileLabel: { fontSize: ts(9), color: "#5a4a2a", marginTop: s(2), textTransform: "capitalize", whiteSpace: "nowrap" },
 
   // ---- OVERLAYS ----
@@ -2301,7 +2348,7 @@ function makeStyles(vw, vh) {
   },
   claimBannerText: { display: "flex", flexDirection: "column", gap: 2 },
   claimTitle: { color: "#d4c9a8", fontSize: ts(14), margin: 0, lineHeight: 1.4 },
-  claimTileBig: { ...tileBase, fontSize: s(44), lineHeight: 1, padding: `${s(3)}px ${s(5)}px` },
+  claimTileBig: { ...tileBase, height: s(72) },
   claimQuestion: { color: gold, fontSize: ts(13), margin: 0 },
   claimBannerBtns: { display: "flex", gap: s(6), alignItems: "center", flexWrap: "wrap" },
   claimAccept: {
@@ -2329,7 +2376,7 @@ function makeStyles(vw, vh) {
     display: "flex", gap: s(2), background: "transparent", padding: `${s(4)}px ${s(6)}px`,
     borderRadius: s(6), border: "none",
   },
-  winTile: { ...tileBase, fontSize: s(36), padding: `${s(2)}px ${s(3)}px` },
+  winTile: { ...tileBase, height: s(56) },
   gameOverText: { color: gold, fontSize: ts(16), marginBottom: s(16) },
 
   // Help overlay
@@ -2358,6 +2405,10 @@ function makeStyles(vw, vh) {
   },
   };
 }
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  React.createElement(React.StrictMode, null, React.createElement(MahjongGame))
+);
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   React.createElement(React.StrictMode, null, React.createElement(MahjongGame))
