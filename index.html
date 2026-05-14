@@ -2299,8 +2299,9 @@ function makeStyles(vw, vh) {
   },
   handTile: {
     display: "flex", flexDirection: "column", alignItems: "center",
-    padding: `${s(2)}px`, background: "transparent",
-    border: "none", borderRadius: s(6),
+    padding: `${s(6)}px ${s(4)}px ${s(4)}px`, background: "#f8f1de",
+    border: `1px solid #3a2a1a`, borderRadius: s(6),
+    boxShadow: `inset 0 -${s(3)}px 0 rgba(0,0,0,0.12), 0 ${s(2)}px ${s(4)}px rgba(0,0,0,0.35)`,
     cursor: "default", transition: "all 0.15s ease-out",
   },
   handTileSelected: {
