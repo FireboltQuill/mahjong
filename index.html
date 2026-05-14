@@ -96,7 +96,7 @@ const LANG = {
     discardedBy: (name) => `${name} discarded `,
     youCan: "You can ", winRound: " — Win the round!",
     pass: "Pass", claimBtn: (type) => `Claim ${type}`,
-    chiBtn: (tiles) => `Chi: ${tiles}`, huBtn: "🀄 Hu!",
+    huBtn: "🀄 Hu!",
     // Round over
     youWin: "🎉 You Win!", otherWins: (name) => `${name} Wins!`,
     drawExhausted: "Draw — Wall Exhausted", winHand: "Winning hand:",
@@ -162,7 +162,7 @@ const LANG = {
     discardedBy: (name) => `${name}打出了 `,
     youCan: "你可以", winRound: " — 赢得本局！",
     pass: "过", claimBtn: (type) => `${type}`,
-    chiBtn: (tiles) => `吃：${tiles}`, huBtn: "🀄 胡！",
+    huBtn: "🀄 胡！",
     youWin: "🎉 你赢了！", otherWins: (name) => `${name}赢了！`,
     drawExhausted: "流局 — 牌墙摸完", winHand: "赢牌：",
     sevenPairs: "七小对",
@@ -1868,7 +1868,9 @@ function MahjongGame() {
                 <>
                   {state.awaitingPlayerClaim.options.map((opt, i) => (
                     <button tabIndex={-1} key={i} style={S.claimAccept} onClick={() => handlePlayerClaim(true, opt)}>
-                      {L.chiBtn(opt.tiles.map((t) => TN(t)).join(" "))}
+                      <span style={S.chiBtnGlyphs}>
+                        {opt.tiles.map((t, ti) => <span key={ti}>{tileSymbol(t)}</span>)}
+                      </span>
                     </button>
                   ))}
                   <button tabIndex={-1} style={S.claimDecline} onClick={() => handlePlayerClaim(false)}>{L.pass}</button>
@@ -2346,6 +2348,10 @@ function makeStyles(vw, vh) {
     background: "rgba(255,255,255,0.08)", border: `1px solid ${goldDim}`, color: green,
     padding: `${s(10)}px ${s(20)}px`, borderRadius: s(6), cursor: "pointer", outline: "none", fontSize: ts(13), whiteSpace: "nowrap",
     minHeight: s(38), touchAction: "manipulation",
+  },
+  chiBtnGlyphs: {
+    fontSize: s(28), lineHeight: 1, letterSpacing: s(2),
+    display: "inline-flex", alignItems: "center", verticalAlign: "middle",
   },
 
   // Round over
