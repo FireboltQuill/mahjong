@@ -201,7 +201,12 @@ function tileKey(t) {
 
 function tileSymbol(t) {
   if (t.suit === "wind") return TILE_SYMBOLS.wind[t.honor];
-  if (t.suit === "dragon") return TILE_SYMBOLS.dragon[t.honor];
+  if (t.suit === "dragon") {
+    const sym = TILE_SYMBOLS.dragon[t.honor];
+    // U+1F004 renders higher than the other mahjong glyphs in most fonts; nudge down.
+    if (t.honor === "red") return <span style={{ display: "inline-block", transform: "translateY(0.1em)" }}>{sym}</span>;
+    return sym;
+  }
   return TILE_SYMBOLS[t.suit][t.rank];
 }
 
