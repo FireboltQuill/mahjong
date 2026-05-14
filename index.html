@@ -2253,10 +2253,15 @@ function makeStyles(vw, vh) {
   discardTilesWrap: { display: "flex", flexWrap: "wrap", gap: s(3), justifyContent: "center" },
   discardEmpty: { color: "rgba(201,169,97,0.15)", fontSize: ts(12) },
   discardTile: {
-    ...tileBase, fontSize: s(34), lineHeight: 1, cursor: "default", transition: "all 0.15s",
+    ...tileBase, fontSize: s(42), lineHeight: 1,
+    padding: `${s(3)}px ${s(5)}px`, background: "#f8f1de",
+    border: `1px solid #3a2a1a`, borderRadius: s(4),
+    boxShadow: `inset 0 -${s(2)}px 0 rgba(0,0,0,0.12), 0 ${s(1)}px ${s(2)}px rgba(0,0,0,0.4)`,
+    cursor: "default", transition: "all 0.15s",
   },
   discardTileLatest: {
-    filter: "brightness(1.1)", boxShadow: `0 0 ${s(8)}px rgba(201,169,97,0.5)`,
+    filter: "brightness(1.05)",
+    boxShadow: `inset 0 -${s(2)}px 0 rgba(0,0,0,0.12), 0 0 ${s(10)}px rgba(201,169,97,0.7)`,
   },
 
   logEntry: { color: greenDim, fontSize: ts(10), padding: `${s(2)}px 0`, fontFamily: "monospace", lineHeight: 1.5 },
