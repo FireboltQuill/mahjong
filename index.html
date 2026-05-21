@@ -41,15 +41,21 @@ const TILE_SYMBOLS = {
 // Text-based tile display
 const SUIT_CHAR = { bamboo: "条", characters: "万", dots: "饼" };
 const SUIT_COLOR = { bamboo: "#2d8a4e", characters: "#c43232", dots: "#2266aa" };
+const DRAGON_COLOR = { red: "#c43232", green: "#2d8a4e", white: "#555" };
+const WIND_COLOR = "#4a3a8a";
+function tileColor(t) {
+  if (t.suit === "wind") return WIND_COLOR;
+  if (t.suit === "dragon") return DRAGON_COLOR[t.honor];
+  return SUIT_COLOR[t.suit];
+}
 function tileDisplay(t) {
   if (t.suit === "wind") {
     const labels = { east: "東", south: "南", west: "西", north: "北" };
-    return { top: labels[t.honor], color: "#4a3a8a" };
+    return { top: labels[t.honor], color: WIND_COLOR };
   }
   if (t.suit === "dragon") {
     const labels = { red: "中", green: "發", white: "白" };
-    const colors = { red: "#c43232", green: "#2d8a4e", white: "#555" };
-    return { top: labels[t.honor], color: colors[t.honor] };
+    return { top: labels[t.honor], color: DRAGON_COLOR[t.honor] };
   }
   return { top: String(t.rank), bot: SUIT_CHAR[t.suit], color: SUIT_COLOR[t.suit] };
 }
@@ -203,9 +209,11 @@ function tileKey(t) {
 }
 
 function tileSymbol(t) {
-  if (t.suit === "wind") return TILE_SYMBOLS.wind[t.honor];
-  if (t.suit === "dragon") return TILE_SYMBOLS.dragon[t.honor];
-  return TILE_SYMBOLS[t.suit][t.rank];
+  let sym;
+  if (t.suit === "wind") sym = TILE_SYMBOLS.wind[t.honor];
+  else if (t.suit === "dragon") sym = TILE_SYMBOLS.dragon[t.honor];
+  else sym = TILE_SYMBOLS[t.suit][t.rank];
+  return <span style={{ color: tileColor(t) }}>{sym}</span>;
 }
 
 function tileName(t) {
