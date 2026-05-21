@@ -2316,19 +2316,24 @@ function makeStyles(vw, vh) {
   menuSubtitle: { color: green, fontSize: ts(12), marginTop: s(6), marginBottom: s(20), letterSpacing: s(3), textTransform: "uppercase" },
   menuSetting: { marginBottom: s(16) },
   menuLabel: { color: gold, display: "block", marginBottom: s(8), fontSize: ts(13), letterSpacing: 1 },
-  windButtons: { display: "flex", gap: s(8), justifyContent: "center", flexWrap: "wrap" },
+  // Grid keeps the three buttons equal-width inside their row regardless of
+  // label length, so EN vs ZH labels don't reflow the menu.
+  windButtons: { display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: s(8) },
   windBtn: {
     background: "rgba(201,169,97,0.08)", border: `1px solid ${goldDim}`, color: green,
-    padding: `${s(8)}px ${s(14)}px`, borderRadius: s(6), cursor: "pointer", outline: "none", fontSize: ts(13), transition: "all 0.2s",
+    padding: `${s(8)}px ${s(10)}px`, borderRadius: s(6), cursor: "pointer", outline: "none", fontSize: ts(13), transition: "all 0.2s",
+    whiteSpace: "nowrap",
   },
   windBtnActive: { background: "rgba(201,169,97,0.22)", borderColor: gold, color: gold },
   startBtn: {
     background: `linear-gradient(135deg, ${gold}, #a8873d)`, color: bg, border: "none",
     padding: `${s(12)}px ${s(36)}px`, borderRadius: s(8), fontSize: ts(17), fontWeight: "bold", cursor: "pointer", outline: "none", letterSpacing: 1,
+    minWidth: s(180), whiteSpace: "nowrap",
   },
   langBtn: {
     background: "rgba(201,169,97,0.1)", border: `1px solid ${goldDim}`, color: gold,
     padding: `${s(6)}px ${s(14)}px`, borderRadius: s(6), cursor: "pointer", outline: "none", fontSize: ts(13), fontWeight: "bold", letterSpacing: 1,
+    minWidth: s(130), whiteSpace: "nowrap",
   },
   menuBtnRow: { display: "flex", gap: s(10), justifyContent: "center", alignItems: "center", flexWrap: "wrap", marginTop: s(6) },
   menuHelpRow: { display: "flex", justifyContent: "center", marginTop: s(8) },
