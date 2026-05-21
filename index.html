@@ -32,7 +32,10 @@ const TILE_SYMBOLS = {
   characters: ["", "🀇", "🀈", "🀉", "🀊", "🀋", "🀌", "🀍", "🀎", "🀏"],
   dots: ["", "🀙", "🀚", "🀛", "🀜", "🀝", "🀞", "🀟", "🀠", "🀡"],
   wind: { east: "🀀", south: "🀁", west: "🀂", north: "🀃" },
-  dragon: { red: "🀄", green: "🀅", white: "🀆" },
+  // U+FE0E forces text (monochrome) presentation on the red dragon, which is
+  // the only mahjong glyph in the standard emoji set and otherwise renders as
+  // a color emoji while the other tiles stay monochrome.
+  dragon: { red: "🀄︎", green: "🀅", white: "🀆" },
 };
 
 // Text-based tile display
@@ -201,12 +204,7 @@ function tileKey(t) {
 
 function tileSymbol(t) {
   if (t.suit === "wind") return TILE_SYMBOLS.wind[t.honor];
-  if (t.suit === "dragon") {
-    const sym = TILE_SYMBOLS.dragon[t.honor];
-    // U+1F004 renders higher than the other mahjong glyphs in most fonts; nudge down.
-    if (t.honor === "red") return <span style={{ display: "inline-block", transform: "translateY(0.1em)" }}>{sym}</span>;
-    return sym;
-  }
+  if (t.suit === "dragon") return TILE_SYMBOLS.dragon[t.honor];
   return TILE_SYMBOLS[t.suit][t.rank];
 }
 
