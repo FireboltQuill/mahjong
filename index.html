@@ -1844,6 +1844,8 @@ function MahjongGame() {
             <div style={S.menuBtnRow}>
               <button tabIndex={-1} style={S.startBtn} onClick={startNewGame}>{L.startGame}</button>
               <button tabIndex={-1} style={S.langBtn} onClick={() => setLang(lang === "en" ? "zh" : "en")}>{L.langToggle}</button>
+            </div>
+            <div style={S.menuHelpRow}>
               <button tabIndex={-1} style={S.langBtn} onClick={() => setShowHelp(true)}>{L.howToPlay}</button>
             </div>
           </div>
@@ -2272,6 +2274,8 @@ function makeStyles(vw, vh) {
     minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
     background: felt, fontFamily: "'Georgia', serif", padding: s(12),
     overflowY: "auto",
+    userSelect: "none", WebkitUserSelect: "none",
+    WebkitTapHighlightColor: "transparent",
   },
   menuCard: {
     background: "rgba(26,58,42,0.92)", border: `2px solid ${gold}`, borderRadius: s(14),
@@ -2312,6 +2316,7 @@ function makeStyles(vw, vh) {
     padding: `${s(6)}px ${s(14)}px`, borderRadius: s(6), cursor: "pointer", outline: "none", fontSize: ts(13), fontWeight: "bold", letterSpacing: 1,
   },
   menuBtnRow: { display: "flex", gap: s(10), justifyContent: "center", alignItems: "center", flexWrap: "wrap", marginTop: s(6) },
+  menuHelpRow: { display: "flex", justifyContent: "center", marginTop: s(8) },
   rulesBox: {
     flex: 1, padding: `${s(12)}px ${s(16)}px`, background: "rgba(0,0,0,0.25)", borderRadius: s(8),
     border: "1px solid rgba(201,169,97,0.12)", textAlign: "left",
