@@ -14,7 +14,10 @@
     user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;
   }
   *:focus, *:active, *:focus-visible {
-    outline: none !important; box-shadow: none !important; outline-width: 0 !important;
+    outline: none !important; outline-width: 0 !important;
+  }
+  button:focus, button:active, button:focus-visible {
+    box-shadow: none !important;
   }
   ::selection { background: transparent; }
   ::-moz-selection { background: transparent; }
@@ -1809,12 +1812,13 @@ function MahjongGame() {
       <>
       <div style={S.menuContainer} onMouseDown={preventFocus}>
         <style dangerouslySetInnerHTML={{__html: `
-          *:focus, *:active, *:focus-visible,
-          button:focus, button:active, button:focus-visible {
+          *:focus, *:active, *:focus-visible {
             outline: none !important;
             outline-width: 0 !important;
-            box-shadow: none !important;
             -webkit-tap-highlight-color: transparent !important;
+          }
+          button:focus, button:active, button:focus-visible {
+            box-shadow: none !important;
           }
         `}} />
         <div style={S.menuCard}>
@@ -1879,12 +1883,13 @@ function MahjongGame() {
     <>
     <div style={S.gameContainer} onMouseDown={preventFocus}>
       <style dangerouslySetInnerHTML={{__html: `
-        *:focus, *:active, *:focus-visible,
-        button:focus, button:active, button:focus-visible {
+        *:focus, *:active, *:focus-visible {
           outline: none !important;
           outline-width: 0 !important;
-          box-shadow: none !important;
           -webkit-tap-highlight-color: transparent !important;
+        }
+        button:focus, button:active, button:focus-visible {
+          box-shadow: none !important;
         }
       `}} />
       {/* ---- TOP BAR ---- */}
