@@ -5,9 +5,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>🀄 Mahjong</title>
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+  * {
+    margin: 0; padding: 0; box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+  }
   html, body, #root { height: 100%; width: 100%; overflow: hidden; }
-  button:focus, button:active, button:focus-visible { outline: none !important; box-shadow: none !important; outline-width: 0 !important; }
+  html, body {
+    user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none;
+  }
+  *:focus, *:active, *:focus-visible {
+    outline: none !important; box-shadow: none !important; outline-width: 0 !important;
+  }
+  ::selection { background: transparent; }
+  ::-moz-selection { background: transparent; }
 </style>
 </head>
 <body>
