@@ -1808,51 +1808,53 @@ function MahjongGame() {
           }
         `}} />
         <div style={S.menuCard}>
-          <h1 style={S.menuTitle}>{L.title}</h1>
-          <p style={S.menuSubtitle}>{L.subtitle}</p>
-          <div style={S.menuSetting}>
-            <label style={S.menuLabel}>{L.windRoundsLabel}</label>
-            <div style={S.windButtons}>
-              {[1, 2, 4].map((n) => (
-                <button
-                  tabIndex={-1}
-                  key={n}
-                  style={{ ...S.windBtn, ...(windRoundsSetting === n ? S.windBtnActive : {}) }}
-                  onClick={() => setWindRoundsSetting(n)}
-                >
-                  {L.windRoundsBtn(n)}
-                </button>
-              ))}
+          <div style={S.menuMain}>
+            <h1 style={S.menuTitle}>{L.title}</h1>
+            <p style={S.menuSubtitle}>{L.subtitle}</p>
+            <div style={S.menuSetting}>
+              <label style={S.menuLabel}>{L.windRoundsLabel}</label>
+              <div style={S.windButtons}>
+                {[1, 2, 4].map((n) => (
+                  <button
+                    tabIndex={-1}
+                    key={n}
+                    style={{ ...S.windBtn, ...(windRoundsSetting === n ? S.windBtnActive : {}) }}
+                    onClick={() => setWindRoundsSetting(n)}
+                  >
+                    {L.windRoundsBtn(n)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={S.menuSetting}>
+              <label style={S.menuLabel}>{L.difficultyLabel}</label>
+              <div style={S.windButtons}>
+                {["easy", "medium", "expert"].map((d) => (
+                  <button
+                    tabIndex={-1}
+                    key={d}
+                    style={{ ...S.windBtn, ...(difficulty === d ? S.windBtnActive : {}) }}
+                    onClick={() => setDifficulty(d)}
+                  >
+                    {d === "easy" ? L.diffEasy : d === "medium" ? L.diffMedium : L.diffExpert}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={S.menuBtnRow}>
+              <button tabIndex={-1} style={S.startBtn} onClick={startNewGame}>{L.startGame}</button>
+              <button tabIndex={-1} style={S.langBtn} onClick={() => setLang(lang === "en" ? "zh" : "en")}>{L.langToggle}</button>
+              <button tabIndex={-1} style={S.langBtn} onClick={() => setShowHelp(true)}>{L.howToPlay}</button>
             </div>
           </div>
-          <div style={S.menuSetting}>
-            <label style={S.menuLabel}>{L.difficultyLabel}</label>
-            <div style={S.windButtons}>
-              {["easy", "medium", "expert"].map((d) => (
-                <button
-                  tabIndex={-1}
-                  key={d}
-                  style={{ ...S.windBtn, ...(difficulty === d ? S.windBtnActive : {}) }}
-                  onClick={() => setDifficulty(d)}
-                >
-                  {d === "easy" ? L.diffEasy : d === "medium" ? L.diffMedium : L.diffExpert}
-                </button>
-              ))}
+          <div style={S.menuAside}>
+            <div style={S.rulesBox}>
+              <h3 style={S.rulesTitle}>{L.rulesTitle}</h3>
+              <p style={S.ruleText}>{L.rule1}</p>
+              <p style={S.ruleText}>{L.rule2}</p>
+              <p style={S.ruleText}>{L.rule3}</p>
+              <p style={S.ruleText}>{L.rule4}</p>
             </div>
-          </div>
-          <div style={S.menuBtnRow}>
-            <button tabIndex={-1} style={S.startBtn} onClick={startNewGame}>{L.startGame}</button>
-            <button tabIndex={-1} style={S.langBtn} onClick={() => setLang(lang === "en" ? "zh" : "en")}>{L.langToggle}</button>
-          </div>
-          <div style={{ textAlign: "center", marginTop: 12 }}>
-            <button tabIndex={-1} style={S.langBtn} onClick={() => setShowHelp(true)}>{L.howToPlay}</button>
-          </div>
-          <div style={S.rulesBox}>
-            <h3 style={S.rulesTitle}>{L.rulesTitle}</h3>
-            <p style={S.ruleText}>{L.rule1}</p>
-            <p style={S.ruleText}>{L.rule2}</p>
-            <p style={S.ruleText}>{L.rule3}</p>
-            <p style={S.ruleText}>{L.rule4}</p>
           </div>
         </div>
       </div>
@@ -2253,6 +2255,10 @@ function makeStyles(vw, vh) {
   const ts = (v) => Math.round(v * Math.max(scale, 0.7));
   // Small/compact: for tiny screen, shrink more aggressively
   const isCompact = vw < 700 || vh < 550;
+  // When the screen is shorter than the menu naturally needs and wide enough
+  // for two columns, lay the menu out side-by-side so the rules panel moves
+  // out of the vertical stack.
+  const menuTwoCol = vh < 720 && vw >= 760;
 
   // Shared tile appearance — single source of truth
   const tileBase = {
@@ -2264,38 +2270,54 @@ function makeStyles(vw, vh) {
   // ---- MENU ----
   menuContainer: {
     minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
-    background: felt, fontFamily: "'Georgia', serif", padding: s(16),
+    background: felt, fontFamily: "'Georgia', serif", padding: s(12),
+    overflowY: "auto",
   },
   menuCard: {
     background: "rgba(26,58,42,0.92)", border: `2px solid ${gold}`, borderRadius: s(14),
-    padding: `${s(48)}px ${s(44)}px`, textAlign: "center", maxWidth: s(440), width: "100%",
+    padding: menuTwoCol ? `${s(24)}px ${s(28)}px` : `${s(28)}px ${s(32)}px`,
+    maxWidth: menuTwoCol ? s(800) : s(420), width: "100%",
     boxShadow: "0 24px 80px rgba(0,0,0,0.6), inset 0 1px 0 rgba(201,169,97,0.15)",
+    display: "flex",
+    flexDirection: menuTwoCol ? "row" : "column",
+    gap: menuTwoCol ? s(28) : 0,
+    alignItems: "stretch",
   },
-  menuTitle: { fontSize: s(52), color: gold, margin: 0, letterSpacing: s(6), textShadow: "0 3px 12px rgba(0,0,0,0.6)" },
-  menuSubtitle: { color: green, fontSize: ts(13), marginTop: s(8), marginBottom: s(36), letterSpacing: s(3), textTransform: "uppercase" },
-  menuSetting: { marginBottom: s(28) },
-  menuLabel: { color: gold, display: "block", marginBottom: s(12), fontSize: ts(14), letterSpacing: 1 },
+  menuMain: {
+    flex: 1, textAlign: "center",
+    display: "flex", flexDirection: "column", justifyContent: "center",
+    minWidth: 0,
+  },
+  menuAside: {
+    flex: menuTwoCol ? "0 0 260px" : "0 0 auto",
+    display: "flex", alignItems: "stretch",
+    marginTop: menuTwoCol ? 0 : s(18),
+  },
+  menuTitle: { fontSize: s(44), color: gold, margin: 0, letterSpacing: s(5), textShadow: "0 3px 12px rgba(0,0,0,0.6)" },
+  menuSubtitle: { color: green, fontSize: ts(12), marginTop: s(6), marginBottom: s(20), letterSpacing: s(3), textTransform: "uppercase" },
+  menuSetting: { marginBottom: s(16) },
+  menuLabel: { color: gold, display: "block", marginBottom: s(8), fontSize: ts(13), letterSpacing: 1 },
   windButtons: { display: "flex", gap: s(8), justifyContent: "center", flexWrap: "wrap" },
   windBtn: {
     background: "rgba(201,169,97,0.08)", border: `1px solid ${goldDim}`, color: green,
-    padding: `${s(10)}px ${s(16)}px`, borderRadius: s(6), cursor: "pointer", outline: "none", fontSize: ts(13), transition: "all 0.2s",
+    padding: `${s(8)}px ${s(14)}px`, borderRadius: s(6), cursor: "pointer", outline: "none", fontSize: ts(13), transition: "all 0.2s",
   },
   windBtnActive: { background: "rgba(201,169,97,0.22)", borderColor: gold, color: gold },
   startBtn: {
     background: `linear-gradient(135deg, ${gold}, #a8873d)`, color: bg, border: "none",
-    padding: `${s(14)}px ${s(44)}px`, borderRadius: s(8), fontSize: ts(18), fontWeight: "bold", cursor: "pointer", outline: "none", letterSpacing: 1,
+    padding: `${s(12)}px ${s(36)}px`, borderRadius: s(8), fontSize: ts(17), fontWeight: "bold", cursor: "pointer", outline: "none", letterSpacing: 1,
   },
   langBtn: {
     background: "rgba(201,169,97,0.1)", border: `1px solid ${goldDim}`, color: gold,
-    padding: `${s(6)}px ${s(16)}px`, borderRadius: s(6), cursor: "pointer", outline: "none", fontSize: ts(14), fontWeight: "bold", letterSpacing: 1,
+    padding: `${s(6)}px ${s(14)}px`, borderRadius: s(6), cursor: "pointer", outline: "none", fontSize: ts(13), fontWeight: "bold", letterSpacing: 1,
   },
-  menuBtnRow: { display: "flex", gap: s(12), justifyContent: "center", alignItems: "center", flexWrap: "wrap" },
+  menuBtnRow: { display: "flex", gap: s(10), justifyContent: "center", alignItems: "center", flexWrap: "wrap", marginTop: s(6) },
   rulesBox: {
-    marginTop: s(32), padding: `${s(18)}px ${s(22)}px`, background: "rgba(0,0,0,0.25)", borderRadius: s(8),
+    flex: 1, padding: `${s(12)}px ${s(16)}px`, background: "rgba(0,0,0,0.25)", borderRadius: s(8),
     border: "1px solid rgba(201,169,97,0.12)", textAlign: "left",
   },
-  rulesTitle: { color: gold, margin: `0 0 ${s(12)}px 0`, fontSize: ts(14), letterSpacing: 1 },
-  ruleText: { color: green, margin: `${s(6)}px 0`, fontSize: ts(13), lineHeight: 1.6 },
+  rulesTitle: { color: gold, margin: `0 0 ${s(8)}px 0`, fontSize: ts(13), letterSpacing: 1 },
+  ruleText: { color: green, margin: `${s(4)}px 0`, fontSize: ts(12), lineHeight: 1.5 },
 
   // ---- GAME SHELL ----
   gameContainer: {
