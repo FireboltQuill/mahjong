@@ -1880,7 +1880,6 @@ function MahjongGame() {
             {L.roundInfo(state.roundNumber, state.totalRounds, L.windDisplay(state.roundWind))}
           </span>
           <span style={S.wallCount}>{L.wallCount(state.wall.length)}</span>
-          <span style={S.scoreChip}>{SL[PLAYER_IDX]}: {state.scores[PLAYER_IDX]} {L.scoreLabel}</span>
         </div>
         <div style={S.topBarRight}>
           {!isPlayerTurn && !state.awaitingPlayerClaim && !roundOver && (
@@ -1898,11 +1897,11 @@ function MahjongGame() {
       <div style={S.tableArea}>
         {/* Game area: everything except log */}
         <div style={S.gameArea}>
-          {/* Top: West AI centered */}
+          {/* Top: West AI centered. Flow goes South → West → North (right to left). */}
           <div style={S.topOppRow}>
-            <div style={S.turnArrow}>→</div>
+            <div style={S.turnArrow}>←</div>
             {renderOpponent(2)}
-            <div style={S.turnArrow}>→</div>
+            <div style={S.turnArrow}>←</div>
           </div>
 
           {/* Middle: North | Discard Pool | South */}
@@ -2020,6 +2019,9 @@ function MahjongGame() {
 
       {/* ---- PLAYER AREA ---- */}
       <div style={S.playerSection}>
+        <div style={S.playerScoreRow}>
+          <span style={S.scoreChip}>{SL[PLAYER_IDX]}: {state.scores[PLAYER_IDX]} {L.scoreLabel}</span>
+        </div>
         {/* Action bar */}
         <div style={S.actionBar}>
           {canDraw && (
@@ -2456,6 +2458,7 @@ function makeStyles(vw, vh) {
     background: "linear-gradient(to top, rgba(0,0,0,0.3), rgba(0,0,0,0.1))",
     padding: `${s(6)}px ${s(16)}px ${s(10)}px`, overflow: "hidden", position: "relative",
   },
+  playerScoreRow: { display: "flex", justifyContent: "flex-end", marginBottom: s(4) },
 
   // Action bar
   actionBar: {
