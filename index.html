@@ -2075,11 +2075,8 @@ function computeDiscardOverride(maxCount, vw, vh) {
   if (maxCount <= lo) return null;
   const scale = calcScale(vw, vh);
   const t = Math.min(1, (maxCount - lo) / (hi - lo));
-  const fs = Math.round((42 - t * 22) * scale);
-  const padV = Math.max(1, Math.round((3 - t * 1.5) * scale));
-  const padH = Math.max(2, Math.round((5 - t * 2.5) * scale));
-  const br = Math.max(1, Math.round((4 - t * 2) * scale));
-  return { fontSize: fs, padding: `${padV}px ${padH}px`, borderRadius: br };
+  const fs = Math.round((42 - t * 18) * scale);
+  return { fontSize: fs };
 }
 
 function makeStyles(vw, vh) {
@@ -2274,14 +2271,11 @@ function makeStyles(vw, vh) {
   discardEmpty: { color: "rgba(201,169,97,0.15)", fontSize: ts(12) },
   discardTile: {
     ...tileBase, fontSize: s(42), lineHeight: 1,
-    padding: `${s(3)}px ${s(5)}px`, background: "#f8f1de",
-    border: `1px solid #3a2a1a`, borderRadius: s(4),
-    boxShadow: `inset 0 -${s(2)}px 0 rgba(0,0,0,0.12), 0 ${s(1)}px ${s(2)}px rgba(0,0,0,0.4)`,
     cursor: "default", transition: "all 0.15s",
   },
   discardTileLatest: {
-    filter: "brightness(1.05)",
-    boxShadow: `inset 0 -${s(2)}px 0 rgba(0,0,0,0.12), 0 0 ${s(10)}px rgba(201,169,97,0.7)`,
+    filter: "brightness(1.1) saturate(1.15)",
+    textShadow: `0 0 ${s(10)}px rgba(201,169,97,0.9)`,
   },
 
   logEntry: { color: greenDim, fontSize: ts(10), padding: `${s(2)}px 0`, fontFamily: "monospace", lineHeight: 1.5 },
