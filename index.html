@@ -1014,7 +1014,7 @@ function assignPersonalities() {
 
 const BASE_SMALL_HU = 10;
 const BASE_LARGE_HU = 20;
-const STARTING_SCORE = 500;
+const STARTING_PER_ROUND = 60;
 
 const ALL_TILE_KINDS = (() => {
   const kinds = [];
@@ -1100,13 +1100,15 @@ const SEAT_LABELS = ["East (You)", "South (AI)", "West (AI)", "North (AI)"];
 
 function createInitialState(windRounds = 1, lang = "en") {
   const personalities = assignPersonalities();
+  const totalRounds = windRounds * 4;
+  const startingScore = totalRounds * STARTING_PER_ROUND;
   return initRound({
     dealer: 0,
     roundWind: "east",
     roundNumber: 1,
-    totalRounds: windRounds * 4,
+    totalRounds,
     windRounds,
-    scores: [STARTING_SCORE, STARTING_SCORE, STARTING_SCORE, STARTING_SCORE],
+    scores: [startingScore, startingScore, startingScore, startingScore],
     roundResults: [],
     personalities,
   }, lang);
