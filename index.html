@@ -114,6 +114,18 @@ const LANG = {
     open: "open", hidden: "hidden", tiles: "tiles",
     turnOrder: "Counter-clockwise",
     posLeft: "← Left", posRight: "Right →", posAcross: "Across",
+    // Scoring
+    scoreLabel: "Pts",
+    smallHu: "Small Hu", largeHu: "Large Hu",
+    winTypeZimo: "Zimo (self-draw)", winTypeDianpao: "Dianpao (off discard)",
+    breakdownTitle: "Scoring",
+    baseLabel: "Base",
+    modNoOpen: "No open meld",
+    modDianpao: "Gave winning tile",
+    modZimo: "Zimo",
+    modSevenPairs: "Seven Pairs",
+    winnerGains: (n) => `Winner +${n}`,
+    loserLoses: (mult, loss) => `×${mult} = -${loss}`,
     // Log messages
     logRoundBegin: (n, d) => `Round ${n} begins. ${d} is dealer.`,
     logExhaust: "Wall exhausted — draw!",
@@ -179,6 +191,17 @@ const LANG = {
     open: "明", hidden: "暗", tiles: "张",
     turnOrder: "逆时针",
     posLeft: "← 左", posRight: "右 →", posAcross: "对面",
+    scoreLabel: "分",
+    smallHu: "小胡", largeHu: "大胡",
+    winTypeZimo: "自摸", winTypeDianpao: "点炮",
+    breakdownTitle: "结算",
+    baseLabel: "底分",
+    modNoOpen: "无明牌",
+    modDianpao: "点炮",
+    modZimo: "自摸",
+    modSevenPairs: "七小对",
+    winnerGains: (n) => `胜者 +${n}`,
+    loserLoses: (mult, loss) => `×${mult} = -${loss}`,
     logRoundBegin: (n, d) => `第${n}局开始。${d}是庄家。`,
     logExhaust: "流局 — 牌墙摸完！",
     logGangConc: (n, t) => `${n}暗杠${t}。`,
@@ -986,6 +1009,89 @@ function assignPersonalities() {
 }
 
 // ============================================================
+// SCORING
+// ============================================================
+
+const BASE_SMALL_HU = 10;
+const BASE_LARGE_HU = 20;
+const STARTING_SCORE = 500;
+
+const ALL_TILE_KINDS = (() => {
+  const kinds = [];
+  for (const suit of SUITS) for (const rank of RANKS) kinds.push({ suit, rank, honor: null });
+  for (const w of WINDS) kinds.push({ suit: "wind", rank: null, honor: w });
+  for (const d of DRAGONS) kinds.push({ suit: "dragon", rank: null, honor: d });
+  return kinds;
+})();
+
+// Count distinct tile kinds that would complete the player's 13-tile state into a valid Hu.
+function countWinningTileKinds(hand, openMelds) {
+  let count = 0;
+  for (const kind of ALL_TILE_KINDS) {
+    if (checkWinWithTile({ hand, openMelds }, { ...kind, id: "test" })) count++;
+  }
+  return count;
+}
+
+// Build the win-info record describing how the round ended.
+// winType: "zimo" (self-draw) | "dianpao" (claimed off a discard)
+// discarder: seat index of the player whose discard was claimed (dianpao only)
+function buildWinInfo(winner, winningTile, winType, discarder) {
+  const handMinus = winner.hand.filter((t) => t.id !== winningTile.id);
+  return {
+    type: winType,
+    winningTile,
+    discarder: winType === "dianpao" ? discarder : null,
+    sevenPairs: winner.openMelds.length === 0 && isSevenPairs(winner.hand),
+    largeHu: countWinningTileKinds(handMinus, winner.openMelds) === 1,
+  };
+}
+
+// Per-player point deltas. Each non-winner's loss starts at the base (10 small,
+// 20 large) and is multiplied by 2 for each applicable modifier:
+//   - they have no claimed open meld
+//   - they discarded the winning tile (dianpao only)
+//   - the win was a zimo (applies to every non-winner)
+//   - the win was seven pairs (applies to every non-winner)
+// The winner gains the sum of all losses.
+function computeScoreDeltas(winInfo, winnerIdx, players) {
+  const base = winInfo.largeHu ? BASE_LARGE_HU : BASE_SMALL_HU;
+  const deltas = [0, 0, 0, 0];
+  const mults = [0, 0, 0, 0];
+  let winnerGain = 0;
+  for (let i = 0; i < 4; i++) {
+    if (i === winnerIdx) continue;
+    let mult = 1;
+    const hasOpenMeld = players[i].openMelds.some((m) => m.claimed);
+    if (!hasOpenMeld) mult *= 2;
+    if (winInfo.type === "dianpao" && winInfo.discarder === i) mult *= 2;
+    if (winInfo.type === "zimo") mult *= 2;
+    if (winInfo.sevenPairs) mult *= 2;
+    const loss = base * mult;
+    deltas[i] = -loss;
+    mults[i] = mult;
+    winnerGain += loss;
+  }
+  deltas[winnerIdx] = winnerGain;
+  return { deltas, mults, base };
+}
+
+// Records a win on the state: updates scores, stores winInfo and breakdown.
+function applyWin(st, winnerIdx, winningTile, winType, discarder) {
+  const winner = st.players[winnerIdx];
+  const winInfo = buildWinInfo(winner, winningTile, winType, discarder);
+  const breakdown = computeScoreDeltas(winInfo, winnerIdx, st.players);
+  const newScores = st.scores.map((s, i) => s + breakdown.deltas[i]);
+  return {
+    ...st,
+    winner: winnerIdx,
+    winInfo,
+    scoreBreakdown: breakdown,
+    scores: newScores,
+  };
+}
+
+// ============================================================
 // GAME STATE
 // ============================================================
 
@@ -1000,7 +1106,7 @@ function createInitialState(windRounds = 1, lang = "en") {
     roundNumber: 1,
     totalRounds: windRounds * 4,
     windRounds,
-    scores: [0, 0, 0, 0],
+    scores: [STARTING_SCORE, STARTING_SCORE, STARTING_SCORE, STARTING_SCORE],
     roundResults: [],
     personalities,
   }, lang);
@@ -1031,6 +1137,8 @@ function initRound(gameInfo, lang = "en") {
     lastDiscarder: null,
     claims: [],
     winner: null,
+    winInfo: null,
+    scoreBreakdown: null,
     isDraw: false,
     log: [ll.logRoundBegin(gameInfo.roundNumber, ll.seats[gameInfo.dealer])],
     pendingClaims: null,
@@ -1038,6 +1146,7 @@ function initRound(gameInfo, lang = "en") {
     awaitingPlayerClaim: null,
     playerDeclinedClaims: [],
     turnDrawn: true,
+    lastDrawn: null,
   };
 }
 
@@ -1136,7 +1245,8 @@ function MahjongGame() {
       const newWall = st.wall.slice(1);
       const newHand = sortHand([...player.hand, tile]);
       const newPlayers = st.players.map((pl, i) => (i === p ? { ...pl, hand: newHand } : pl));
-      let newSt = { ...st, players: newPlayers, wall: newWall, phase: "discard", turnDrawn: true };
+      let newSt = { ...st, players: newPlayers, wall: newWall, phase: "discard", turnDrawn: true, lastDrawn: tile };
+      let winTile = tile;
 
       // Check for concealed gang
       const cGangs = findConcealedGangs(newHand);
@@ -1157,18 +1267,17 @@ function MahjongGame() {
           ...newSt,
           players: [...newPlayers],
           wall: afterWall,
+          lastDrawn: replacementTile,
           log: [...newSt.log, _L().logGangConc(_SL()[p], _TN(gang.tiles[0]))],
         };
+        winTile = replacementTile;
       }
 
       // Check self-draw win
       const checkPlayer = newSt.players[p];
       if (validateHu(checkPlayer)) {
-        return {
-          ...newSt,
-          winner: p,
-          log: [...newSt.log, _L().logZimo(_SL()[p], _TN(tile))],
-        };
+        const won = applyWin(newSt, p, winTile, "zimo", null);
+        return { ...won, log: [...won.log, _L().logZimo(_SL()[p], _TN(winTile))] };
       }
 
       return { ...newSt, log: [...newSt.log, _L().logDraw(_SL()[p])] };
@@ -1306,13 +1415,9 @@ function MahjongGame() {
         ...newPlayers[discarder],
         discards: newPlayers[discarder].discards.filter((t) => t.id !== disc.id),
       };
-      return {
-        ...st,
-        players: newPlayers,
-        winner: p,
-        awaitingPlayerClaim: null,
-        log: [...st.log, _L().logDianpao(_SL()[p], _TN(disc))],
-      };
+      const afterClaim = { ...st, players: newPlayers, awaitingPlayerClaim: null };
+      const won = applyWin(afterClaim, p, disc, "dianpao", discarder);
+      return { ...won, log: [...won.log, _L().logDianpao(_SL()[p], _TN(disc))] };
     }
 
     const opt = claim.option;
@@ -1392,6 +1497,7 @@ function MahjongGame() {
         wall: newWall,
         phase: "discard",
         turnDrawn: true,
+        lastDrawn: tile,
         log: [...prev.log, _L().logYouDraw(_TN(tile))],
       };
 
@@ -1432,7 +1538,11 @@ function MahjongGame() {
       if (prev.currentTurn !== PLAYER_IDX) return prev;
       const player = prev.players[PLAYER_IDX];
       if (validateHu(player)) {
-        return { ...prev, winner: PLAYER_IDX, log: [...prev.log, _L().logYouHu] };
+        // The player can only zimo immediately after drawing, so lastDrawn is
+        // the winning tile. Fall back to the latest hand tile if unset.
+        const winTile = prev.lastDrawn || player.hand[player.hand.length - 1];
+        const won = applyWin(prev, PLAYER_IDX, winTile, "zimo", null);
+        return { ...won, log: [...won.log, _L().logYouHu] };
       }
       return { ...prev, log: [...prev.log, _L().logBadHu] };
     });
@@ -1459,6 +1569,7 @@ function MahjongGame() {
         ...prev,
         players: newPlayers,
         wall: afterWall,
+        lastDrawn: replacement,
         log: [...prev.log, _L().logYouGang(_TN(tiles[0]))],
       };
     });
@@ -1545,7 +1656,10 @@ function MahjongGame() {
               <span style={S.personalityTag}>{personalityLabel(pers)}</span>
             )}
           </div>
-          <span style={S.oppTileCount}>{opp.hand.length} {L.tiles}</span>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+            <span style={S.scoreChip}>{state.scores[pIdx]} {L.scoreLabel}</span>
+            <span style={S.oppTileCount}>{opp.hand.length} {L.tiles}</span>
+          </div>
         </div>
         {opp.openMelds.length > 0 && (
           <div style={S.oppMeldsRow}>
@@ -1764,6 +1878,7 @@ function MahjongGame() {
             {L.roundInfo(state.roundNumber, state.totalRounds, L.windDisplay(state.roundWind))}
           </span>
           <span style={S.wallCount}>{L.wallCount(state.wall.length)}</span>
+          <span style={S.scoreChip}>{SL[PLAYER_IDX]}: {state.scores[PLAYER_IDX]} {L.scoreLabel}</span>
         </div>
         <div style={S.topBarRight}>
           {!isPlayerTurn && !state.awaitingPlayerClaim && !roundOver && (
@@ -1991,6 +2106,13 @@ function MahjongGame() {
                   {state.winner === PLAYER_IDX ? L.youWin : L.otherWins(SL[state.winner])}
                 </h2>
                 {is7p && <p style={{ color: "#c9a961", fontSize: 14, letterSpacing: 2, marginBottom: 8, textTransform: "uppercase" }}>{L.sevenPairs}</p>}
+                {state.winInfo && (
+                  <p style={S.winTypeBadge}>
+                    {state.winInfo.type === "zimo" ? L.winTypeZimo : L.winTypeDianpao}
+                    {" · "}
+                    {state.winInfo.largeHu ? L.largeHu : L.smallHu}
+                  </p>
+                )}
                 <div style={S.winningHand}>
                   <p style={S.winHandLabel}>{L.winHand}</p>
                   <div style={S.winTilesRow}>
@@ -2039,6 +2161,41 @@ function MahjongGame() {
               })()
             ) : (
               <h2 style={S.winTitle}>{L.drawExhausted}</h2>
+            )}
+            {state.scoreBreakdown && (
+              <div style={S.breakdownBox}>
+                <p style={S.breakdownTitle}>{L.breakdownTitle}</p>
+                <p style={S.breakdownBase}>
+                  {L.baseLabel}: {state.scoreBreakdown.base}
+                </p>
+                {state.players.map((_, i) => {
+                  const delta = state.scoreBreakdown.deltas[i];
+                  const isWinner = i === state.winner;
+                  const mods = [];
+                  if (!isWinner) {
+                    if (!state.players[i].openMelds.some((m) => m.claimed)) mods.push(L.modNoOpen);
+                    if (state.winInfo.type === "dianpao" && state.winInfo.discarder === i) mods.push(L.modDianpao);
+                    if (state.winInfo.type === "zimo") mods.push(L.modZimo);
+                    if (state.winInfo.sevenPairs) mods.push(L.modSevenPairs);
+                  }
+                  return (
+                    <div key={i} style={S.breakdownRow}>
+                      <span style={S.breakdownName}>{SL[i]}</span>
+                      <span style={S.breakdownMods}>
+                        {isWinner
+                          ? L.winnerGains(delta)
+                          : (mods.length > 0
+                              ? `${mods.join(" + ")} ${L.loserLoses(state.scoreBreakdown.mults[i], -delta)}`
+                              : `${L.loserLoses(state.scoreBreakdown.mults[i], -delta)}`)}
+                      </span>
+                      <span style={isWinner ? S.breakdownDeltaPos : S.breakdownDeltaNeg}>
+                        {delta > 0 ? `+${delta}` : delta}
+                      </span>
+                      <span style={S.breakdownTotal}>= {state.scores[i]}</span>
+                    </div>
+                  );
+                })}
+              </div>
             )}
             {gameOver ? (
               <div>
@@ -2152,6 +2309,11 @@ function makeStyles(vw, vh) {
   topBarRight: { display: "flex", gap: s(10), alignItems: "center", flexWrap: "wrap" },
   roundInfo: { color: gold, fontSize: ts(13), letterSpacing: 1, fontWeight: "bold" },
   wallCount: { color: green, fontSize: ts(12) },
+  scoreChip: {
+    color: gold, fontSize: ts(11), fontWeight: "bold", letterSpacing: 0.5,
+    background: "rgba(201,169,97,0.12)", border: `1px solid rgba(201,169,97,0.3)`,
+    padding: `${s(2)}px ${s(8)}px`, borderRadius: s(10), whiteSpace: "nowrap",
+  },
   statusText: { color: greenDim, fontSize: ts(12), fontStyle: "italic" },
   statusTextYou: { color: gold, fontSize: ts(12), fontWeight: "bold" },
   menuBtn: {
@@ -2399,6 +2561,30 @@ function makeStyles(vw, vh) {
     borderRadius: s(6), border: "none",
   },
   winTile: { ...tileBase, fontSize: s(48), lineHeight: 1 },
+  winTypeBadge: {
+    color: "#d4c9a8", fontSize: ts(12), letterSpacing: 1.5, textTransform: "uppercase",
+    marginBottom: s(12), fontWeight: "bold",
+  },
+  breakdownBox: {
+    background: "rgba(0,0,0,0.3)", border: `1px solid rgba(201,169,97,0.25)`,
+    borderRadius: s(8), padding: `${s(10)}px ${s(14)}px`, margin: `${s(6)}px 0 ${s(16)}px`,
+    textAlign: "left",
+  },
+  breakdownTitle: {
+    color: gold, fontSize: ts(11), letterSpacing: 2, textTransform: "uppercase",
+    marginBottom: s(4), fontWeight: "bold",
+  },
+  breakdownBase: { color: greenDim, fontSize: ts(11), marginBottom: s(6) },
+  breakdownRow: {
+    display: "grid", gridTemplateColumns: "auto 1fr auto auto",
+    gap: s(8), alignItems: "center", padding: `${s(3)}px 0`,
+    borderTop: "1px dashed rgba(201,169,97,0.12)", fontSize: ts(12),
+  },
+  breakdownName: { color: "#d4c9a8", fontWeight: "bold" },
+  breakdownMods: { color: greenDim, fontStyle: "italic" },
+  breakdownDeltaPos: { color: "#7dd498", fontWeight: "bold" },
+  breakdownDeltaNeg: { color: "#d48a8a", fontWeight: "bold" },
+  breakdownTotal: { color: gold, fontFamily: "monospace" },
   gameOverText: { color: gold, fontSize: ts(16), marginBottom: s(16) },
 
   // Help overlay
