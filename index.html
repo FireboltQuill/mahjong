@@ -1087,6 +1087,8 @@ function MahjongGame() {
 
   // Dynamic styles based on viewport
   const S = useMemo(() => makeStyles(winSize.w, winSize.h), [winSize.w, winSize.h]);
+  const maxDiscards = Math.max(0, ...state.players.map((p) => p.discards.length));
+  const discardDyn = computeDiscardOverride(maxDiscards, winSize.w, winSize.h);
 
   // Auto-scroll log
   useEffect(() => {
@@ -1805,7 +1807,7 @@ function MahjongGame() {
                       {state.players[2].discards.length === 0 && <span style={S.discardEmpty}>—</span>}
                       {state.players[2].discards.map((t, i) => {
                         const isLast = state.lastDiscard && t.id === state.lastDiscard.id;
-                        return <span key={i} style={{ ...S.discardTile, ...(isLast ? S.discardTileLatest : {}) }} title={TN(t)}>{tileSymbol(t)}</span>;
+                        return <span key={i} style={{ ...S.discardTile, ...(discardDyn || {}), ...(isLast ? S.discardTileLatest : {}) }} title={TN(t)}>{tileSymbol(t)}</span>;
                       })}
                     </div>
                   </div>
@@ -1815,7 +1817,7 @@ function MahjongGame() {
                       {state.players[3].discards.length === 0 && <span style={S.discardEmpty}>—</span>}
                       {state.players[3].discards.map((t, i) => {
                         const isLast = state.lastDiscard && t.id === state.lastDiscard.id;
-                        return <span key={i} style={{ ...S.discardTile, ...(isLast ? S.discardTileLatest : {}) }} title={TN(t)}>{tileSymbol(t)}</span>;
+                        return <span key={i} style={{ ...S.discardTile, ...(discardDyn || {}), ...(isLast ? S.discardTileLatest : {}) }} title={TN(t)}>{tileSymbol(t)}</span>;
                       })}
                     </div>
                   </div>
@@ -1825,7 +1827,7 @@ function MahjongGame() {
                       {state.players[1].discards.length === 0 && <span style={S.discardEmpty}>—</span>}
                       {state.players[1].discards.map((t, i) => {
                         const isLast = state.lastDiscard && t.id === state.lastDiscard.id;
-                        return <span key={i} style={{ ...S.discardTile, ...(isLast ? S.discardTileLatest : {}) }} title={TN(t)}>{tileSymbol(t)}</span>;
+                        return <span key={i} style={{ ...S.discardTile, ...(discardDyn || {}), ...(isLast ? S.discardTileLatest : {}) }} title={TN(t)}>{tileSymbol(t)}</span>;
                       })}
                     </div>
                   </div>
@@ -1835,7 +1837,7 @@ function MahjongGame() {
                       {state.players[0].discards.length === 0 && <span style={S.discardEmpty}>—</span>}
                       {state.players[0].discards.map((t, i) => {
                         const isLast = state.lastDiscard && t.id === state.lastDiscard.id;
-                        return <span key={i} style={{ ...S.discardTile, ...(isLast ? S.discardTileLatest : {}) }} title={TN(t)}>{tileSymbol(t)}</span>;
+                        return <span key={i} style={{ ...S.discardTile, ...(discardDyn || {}), ...(isLast ? S.discardTileLatest : {}) }} title={TN(t)}>{tileSymbol(t)}</span>;
                       })}
                     </div>
                   </div>
@@ -2061,9 +2063,27 @@ const bg = "#0d1f17";
 const bgLight = "#1a3a2a";
 const felt = "linear-gradient(160deg, #1a3a2a 0%, #0d1f17 40%, #142e20 100%)";
 
-function makeStyles(vw, vh) {
+function calcScale(vw, vh) {
   const baseW = 1200, baseH = 800;
-  const scale = Math.min(Math.max(Math.min(vw / baseW, vh / baseH), 0.45), 1.4);
+  return Math.min(Math.max(Math.min(vw / baseW, vh / baseH), 0.45), 1.4);
+}
+
+// Shrinks discard-pool tiles as a player's pile grows so they all stay
+// visible without scrolling. Returns null below the threshold.
+function computeDiscardOverride(maxCount, vw, vh) {
+  const lo = 6, hi = 22;
+  if (maxCount <= lo) return null;
+  const scale = calcScale(vw, vh);
+  const t = Math.min(1, (maxCount - lo) / (hi - lo));
+  const fs = Math.round((42 - t * 22) * scale);
+  const padV = Math.max(1, Math.round((3 - t * 1.5) * scale));
+  const padH = Math.max(2, Math.round((5 - t * 2.5) * scale));
+  const br = Math.max(1, Math.round((4 - t * 2) * scale));
+  return { fontSize: fs, padding: `${padV}px ${padH}px`, borderRadius: br };
+}
+
+function makeStyles(vw, vh) {
+  const scale = calcScale(vw, vh);
   const s = (v) => Math.round(v * scale);
   // Dampened scale for text (don't shrink below 0.7x)
   const ts = (v) => Math.round(v * Math.max(scale, 0.7));
