@@ -1775,6 +1775,11 @@ function MahjongGame() {
         ...prev,
         currentTurn: adminInput.turn,
         phase: adminInput.phase,
+        // turnDrawn tracks whether the current player has already drawn this
+        // turn. Discard phase implies they have (14 tiles in hand); draw phase
+        // implies they haven't (13 tiles). Without this, the player can hit a
+        // dead state where they can neither draw nor discard.
+        turnDrawn: adminInput.phase === "discard",
         wall: newWall,
         players: newPlayers,
         scores: newScores,
