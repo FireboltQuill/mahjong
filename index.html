@@ -121,7 +121,7 @@ const LANG = {
     huBtn: "🀄 Hu!",
     // Round over
     youWin: "🎉 You Win!", otherWins: (name) => `${name} Wins!`,
-    drawExhausted: "Draw — Wall Exhausted", winHand: "Winning hand:",
+    drawExhausted: "Draw — Wall Exhausted", winHand: "Winning hand:", winningTile: "Winning tile",
     sevenPairs: "Seven Pairs (七小对)",
     gameComplete: "Game Complete!", backMenu: "Back to Menu", nextRound: "Next Round →",
     open: "open", hidden: "hidden", tiles: "tiles",
@@ -198,7 +198,7 @@ const LANG = {
     pass: "过", claimBtn: (type) => `${type}`,
     huBtn: "🀄 胡！",
     youWin: "🎉 你赢了！", otherWins: (name) => `${name}赢了！`,
-    drawExhausted: "流局 — 牌墙摸完", winHand: "赢牌：",
+    drawExhausted: "流局 — 牌墙摸完", winHand: "赢牌：", winningTile: "胡的牌",
     sevenPairs: "七小对",
     gameComplete: "游戏结束！", backMenu: "返回主菜单", nextRound: "下一局 →",
     open: "明", hidden: "暗", tiles: "张",
@@ -2139,45 +2139,53 @@ function MahjongGame() {
                 <div style={S.winningHand}>
                   <p style={S.winHandLabel}>{L.winHand}</p>
                   <div style={S.winTilesRow}>
-                    {is7p ? (
-                      // Group hand into pairs for display
-                      (() => {
-                        const pairs = [];
-                        const used = new Set();
-                        for (const t of winner.hand) {
-                          if (used.has(t.id)) continue;
-                          const match = winner.hand.find((x) => x.id !== t.id && !used.has(x.id) && tileKey(x) === tileKey(t));
-                          if (match) {
-                            pairs.push([t, match]);
-                            used.add(t.id);
-                            used.add(match.id);
+                    {(() => {
+                      const winId = state.winInfo && state.winInfo.winningTile ? state.winInfo.winningTile.id : null;
+                      const tileStyle = (t) =>
+                        winId && t.id === winId ? { ...S.winTile, ...S.winTileHighlight } : S.winTile;
+                      return is7p ? (
+                        // Group hand into pairs for display
+                        (() => {
+                          const pairs = [];
+                          const used = new Set();
+                          for (const t of winner.hand) {
+                            if (used.has(t.id)) continue;
+                            const match = winner.hand.find((x) => x.id !== t.id && !used.has(x.id) && tileKey(x) === tileKey(t));
+                            if (match) {
+                              pairs.push([t, match]);
+                              used.add(t.id);
+                              used.add(match.id);
+                            }
                           }
-                        }
-                        return pairs.map((pair, pi) => (
-                          <div key={pi} style={S.winMeldGroup}>
-                            {pair.map((t, ti) => (
-                              <span key={ti} style={S.winTile}>{tileSymbol(t)}</span>
-                            ))}
-                          </div>
-                        ));
-                      })()
-                    ) : (
-                      <>
-                        {winner.openMelds.map((m, mi) => (
-                          <div key={`m${mi}`} style={S.winMeldGroup}>
-                            {m.tiles.map((t, ti) => (
-                              <span key={ti} style={S.winTile}>{tileSymbol(t)}</span>
-                            ))}
-                          </div>
-                        ))}
-                        <div style={S.winMeldGroup}>
-                          {winner.hand.map((t, ti) => (
-                            <span key={ti} style={S.winTile}>{tileSymbol(t)}</span>
+                          return pairs.map((pair, pi) => (
+                            <div key={pi} style={S.winMeldGroup}>
+                              {pair.map((t, ti) => (
+                                <span key={ti} style={tileStyle(t)}>{tileSymbol(t)}</span>
+                              ))}
+                            </div>
+                          ));
+                        })()
+                      ) : (
+                        <>
+                          {winner.openMelds.map((m, mi) => (
+                            <div key={`m${mi}`} style={S.winMeldGroup}>
+                              {m.tiles.map((t, ti) => (
+                                <span key={ti} style={tileStyle(t)}>{tileSymbol(t)}</span>
+                              ))}
+                            </div>
                           ))}
-                        </div>
-                      </>
-                    )}
+                          <div style={S.winMeldGroup}>
+                            {winner.hand.map((t, ti) => (
+                              <span key={ti} style={tileStyle(t)}>{tileSymbol(t)}</span>
+                            ))}
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
+                  {state.winInfo && state.winInfo.winningTile && (
+                    <p style={S.winningTileLabel}>{L.winningTile}: {TN(state.winInfo.winningTile)}</p>
+                  )}
                 </div>
                 </>
                 );
@@ -2613,6 +2621,18 @@ function makeStyles(vw, vh) {
     borderRadius: s(6), border: "none",
   },
   winTile: { ...tileBase, fontSize: s(48), lineHeight: 1 },
+  winTileHighlight: {
+    background: "rgba(201,169,97,0.28)",
+    borderRadius: s(8),
+    boxShadow: `0 0 ${s(14)}px rgba(201,169,97,0.85), inset 0 0 0 1px ${gold}`,
+    padding: `${s(2)}px ${s(4)}px`,
+    textShadow: `0 0 ${s(8)}px rgba(255,220,140,0.9)`,
+    filter: "brightness(1.15) saturate(1.2)",
+  },
+  winningTileLabel: {
+    color: gold, fontSize: ts(11), letterSpacing: 1, textTransform: "uppercase",
+    marginTop: s(8), fontWeight: "bold",
+  },
   winTypeBadge: {
     color: "#d4c9a8", fontSize: ts(12), letterSpacing: 1.5, textTransform: "uppercase",
     marginBottom: s(12), fontWeight: "bold",
