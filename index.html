@@ -157,6 +157,25 @@ const LANG = {
     logOver: "Game over!",
     howToPlay: "How to Play",
     helpClose: "✕ Close",
+    // Admin console
+    adminMenuBtn: "🔧 Admin",
+    adminBtn: "🔧",
+    adminTitle: "Admin Console",
+    adminClose: "✕ Close",
+    adminLegend: "Tiles: b1–b9 (bamboo) · c1–c9 (characters) · d1–d9 (dots) · E S W N (winds) · R G P (red/green/white dragon). Melds: type:tile tile tile (add ! after type for concealed). Multiple melds separated by ;.",
+    adminMeldExample: "Example: peng:c5 c5 c5; chi:b1 b2 b3; gang!:d7 d7 d7 d7",
+    adminTurn: "Turn",
+    adminPhase: "Phase",
+    adminWall: "Wall (next tiles)",
+    adminScore: "Score",
+    adminHand: "Hand",
+    adminMelds: "Open Melds",
+    adminDiscards: "Discards",
+    adminCancel: "Cancel",
+    adminApply: "Apply",
+    adminPhaseDraw: "Draw",
+    adminPhaseDiscard: "Discard",
+    adminPhaseClaim: "Claim",
   },
   zh: {
     tileName: (t) => {
@@ -232,6 +251,24 @@ const LANG = {
     logOver: "游戏结束！",
     howToPlay: "游戏说明",
     helpClose: "✕ 关闭",
+    adminMenuBtn: "🔧 管理",
+    adminBtn: "🔧",
+    adminTitle: "管理控制台",
+    adminClose: "✕ 关闭",
+    adminLegend: "牌：b1–b9（条）· c1–c9（万）· d1–d9（饼）· E S W N（风）· R G P（中/發/白）。副露：类型:牌 牌 牌（类型后加!表示暗杠）。多个副露用;分隔。",
+    adminMeldExample: "例：peng:c5 c5 c5; chi:b1 b2 b3; gang!:d7 d7 d7 d7",
+    adminTurn: "回合",
+    adminPhase: "阶段",
+    adminWall: "牌墙（下一张）",
+    adminScore: "分数",
+    adminHand: "手牌",
+    adminMelds: "副露",
+    adminDiscards: "弃牌",
+    adminCancel: "取消",
+    adminApply: "应用",
+    adminPhaseDraw: "摸牌",
+    adminPhaseDiscard: "打牌",
+    adminPhaseClaim: "鸣牌",
   },
 };
 
@@ -301,6 +338,74 @@ function shuffle(arr) {
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
+}
+
+// ============================================================
+// TILE SHORT-SPEC PARSING (for the admin console)
+// ============================================================
+// Examples:
+//   b1..b9   bamboo 1..9
+//   c1..c9   characters 1..9
+//   d1..d9   dots 1..9
+//   E/S/W/N  east/south/west/north wind
+//   R/G/P    red/green/white(plate) dragon
+const ADMIN_HONOR_MAP = {
+  E: ["wind", "east"], S: ["wind", "south"],
+  W: ["wind", "west"], N: ["wind", "north"],
+  R: ["dragon", "red"], G: ["dragon", "green"], P: ["dragon", "white"],
+};
+
+function parseTileSpec(spec) {
+  if (!spec) return null;
+  const t = spec.trim();
+  if (!t) return null;
+  const suitMatch = /^([bcd])([1-9])$/i.exec(t);
+  if (suitMatch) {
+    const suitMap = { b: "bamboo", c: "characters", d: "dots" };
+    return createTile(suitMap[suitMatch[1].toLowerCase()], parseInt(suitMatch[2], 10), null);
+  }
+  const honor = ADMIN_HONOR_MAP[t.toUpperCase()];
+  if (honor) return createTile(honor[0], null, honor[1]);
+  return null;
+}
+
+function parseTileList(input) {
+  if (!input) return [];
+  return input.split(/[\s,]+/).filter(Boolean).map(parseTileSpec).filter(Boolean);
+}
+
+function tileToSpec(t) {
+  if (t.suit === "wind") return { east: "E", south: "S", west: "W", north: "N" }[t.honor];
+  if (t.suit === "dragon") return { red: "R", green: "G", white: "P" }[t.honor];
+  return ({ bamboo: "b", characters: "c", dots: "d" }[t.suit]) + t.rank;
+}
+
+function parseMeld(meldStr) {
+  if (!meldStr) return null;
+  const trimmed = meldStr.trim();
+  if (!trimmed) return null;
+  const colonIdx = trimmed.indexOf(":");
+  if (colonIdx < 0) return null;
+  let type = trimmed.slice(0, colonIdx).trim().toLowerCase();
+  let concealed = false;
+  if (type.endsWith("!")) {
+    concealed = true;
+    type = type.slice(0, -1).trim();
+  }
+  if (!["peng", "chi", "gang"].includes(type)) return null;
+  const tiles = parseTileList(trimmed.slice(colonIdx + 1));
+  if (tiles.length === 0) return null;
+  return { type, tiles, claimed: !concealed, concealed };
+}
+
+// Melds are separated by ';' (tile lists inside a meld are space-separated).
+function parseMeldList(input) {
+  if (!input) return [];
+  return input.split(";").map((s) => s.trim()).filter(Boolean).map(parseMeld).filter(Boolean);
+}
+
+function meldToSpec(m) {
+  return `${m.type}${m.concealed ? "!" : ""}:${m.tiles.map(tileToSpec).join(" ")}`;
 }
 
 function sortHand(hand) {
@@ -1180,6 +1285,8 @@ function MahjongGame() {
   const [lang, setLang] = useState("en");
   const [difficulty, setDifficulty] = useState("easy");
   const [showHelp, setShowHelp] = useState(false);
+  const [showAdmin, setShowAdmin] = useState(false);
+  const [adminInput, setAdminInput] = useState(null);
   const [winSize, setWinSize] = useState({ w: typeof window !== "undefined" ? window.innerWidth : 1200, h: typeof window !== "undefined" ? window.innerHeight : 800 });
   const logRef = useRef(null);
   const autoPlayRef = useRef(null);
@@ -1618,6 +1725,86 @@ function MahjongGame() {
     setClaimOptions(null);
   }
 
+  // Admin console: populate form from a state snapshot and open the modal.
+  function openAdmin(snapshot) {
+    const src = snapshot || state;
+    setAdminInput({
+      turn: src.currentTurn,
+      phase: src.phase,
+      wall: src.wall.slice(0, 14).map(tileToSpec).join(" "),
+      players: src.players.map((p, i) => ({
+        hand: p.hand.map(tileToSpec).join(" "),
+        melds: p.openMelds.map(meldToSpec).join("; "),
+        discards: p.discards.map(tileToSpec).join(" "),
+        score: String(src.scores[i]),
+      })),
+    });
+    setShowAdmin(true);
+  }
+  function closeAdmin() {
+    setShowAdmin(false);
+  }
+  function updateAdmin(changes) {
+    setAdminInput((prev) => ({ ...prev, ...changes }));
+  }
+  function updateAdminPlayer(idx, changes) {
+    setAdminInput((prev) => ({
+      ...prev,
+      players: prev.players.map((p, i) => (i === idx ? { ...p, ...changes } : p)),
+    }));
+  }
+  function applyAdmin() {
+    setState((prev) => {
+      const newPlayers = prev.players.map((p, i) => {
+        const inp = adminInput.players[i];
+        return {
+          ...p,
+          hand: parseTileList(inp.hand),
+          openMelds: parseMeldList(inp.melds),
+          discards: parseTileList(inp.discards),
+        };
+      });
+      const newWallTiles = parseTileList(adminInput.wall);
+      // Prepend the user's tiles to the wall, dropping an equal count from the
+      // front of the existing wall so length stays bounded.
+      const newWall = newWallTiles.length > 0
+        ? [...newWallTiles, ...prev.wall.slice(newWallTiles.length)]
+        : prev.wall;
+      const newScores = adminInput.players.map((p) => parseInt(p.score, 10) || 0);
+      return {
+        ...prev,
+        currentTurn: adminInput.turn,
+        phase: adminInput.phase,
+        wall: newWall,
+        players: newPlayers,
+        scores: newScores,
+        // Stale references that would point at tiles whose IDs we just rewrote.
+        lastDiscard: null,
+        lastDiscarder: null,
+        lastDrawn: null,
+        awaitingPlayerClaim: null,
+        playerDeclinedClaims: [],
+        pendingClaims: null,
+        // Pulling someone out of a finished round resets win/draw flags.
+        winner: null,
+        winInfo: null,
+        scoreBreakdown: null,
+        isDraw: false,
+      };
+    });
+    setShowAdmin(false);
+  }
+  // Menu admin entry: start a normal game and open admin so the user can
+  // overwrite the initial state.
+  function startWithAdmin() {
+    const initialState = createInitialState(windRoundsSetting, langRef.current);
+    setState(initialState);
+    setShowMenu(false);
+    setSelectedTileIdx(null);
+    setClaimOptions(null);
+    openAdmin(initialState);
+  }
+
   function nextRound() {
     setState((prev) => {
       const newDealer = (prev.dealer + 1) % 4;
@@ -1715,6 +1902,112 @@ function MahjongGame() {
         <span style={{ fontSize: topFs, lineHeight: 1.1 }}>{d.top}</span>
         {d.bot && <span style={{ fontSize: botFs, lineHeight: 1, marginTop: -1 }}>{d.bot}</span>}
       </span>
+    );
+  }
+
+  // ============================================================
+  // ADMIN CONSOLE OVERLAY
+  // ============================================================
+  function renderAdminOverlay() {
+    if (!adminInput) return null;
+    return (
+      <div style={S.overlay} onClick={closeAdmin}>
+        <div style={S.adminPanel} onClick={(e) => e.stopPropagation()}>
+          <div style={S.adminHeader}>
+            <h2 style={S.adminTitle}>{L.adminTitle}</h2>
+            <button tabIndex={-1} style={S.menuBtn} onClick={closeAdmin}>{L.adminClose}</button>
+          </div>
+          <div style={S.adminScroll}>
+            <p style={S.adminLegend}>{L.adminLegend}</p>
+            <p style={S.adminLegend}>{L.adminMeldExample}</p>
+
+            <div style={S.adminTopRow}>
+              <label style={S.adminInlineLabel}>
+                {L.adminTurn}:
+                <select
+                  style={S.adminSelect}
+                  value={adminInput.turn}
+                  onChange={(e) => updateAdmin({ turn: parseInt(e.target.value, 10) })}
+                >
+                  {[0, 1, 2, 3].map((i) => (
+                    <option key={i} value={i}>{SL[i]}</option>
+                  ))}
+                </select>
+              </label>
+              <label style={S.adminInlineLabel}>
+                {L.adminPhase}:
+                <select
+                  style={S.adminSelect}
+                  value={adminInput.phase}
+                  onChange={(e) => updateAdmin({ phase: e.target.value })}
+                >
+                  <option value="draw">{L.adminPhaseDraw}</option>
+                  <option value="discard">{L.adminPhaseDiscard}</option>
+                  <option value="claim">{L.adminPhaseClaim}</option>
+                </select>
+              </label>
+            </div>
+
+            <div style={S.adminField}>
+              <label style={S.adminLabel}>{L.adminWall}</label>
+              <textarea
+                style={S.adminTextarea}
+                value={adminInput.wall}
+                onChange={(e) => updateAdmin({ wall: e.target.value })}
+                rows={2}
+              />
+            </div>
+
+            {adminInput.players.map((p, i) => (
+              <div key={i} style={S.adminPlayerBox}>
+                <div style={S.adminPlayerHeader}>
+                  <span style={S.adminPlayerName}>{SL[i]}</span>
+                  <label style={S.adminInlineLabel}>
+                    {L.adminScore}:
+                    <input
+                      style={S.adminScoreInput}
+                      type="number"
+                      value={p.score}
+                      onChange={(e) => updateAdminPlayer(i, { score: e.target.value })}
+                    />
+                  </label>
+                </div>
+                <div style={S.adminField}>
+                  <label style={S.adminLabel}>{L.adminHand}</label>
+                  <textarea
+                    style={S.adminTextarea}
+                    value={p.hand}
+                    onChange={(e) => updateAdminPlayer(i, { hand: e.target.value })}
+                    rows={2}
+                  />
+                </div>
+                <div style={S.adminField}>
+                  <label style={S.adminLabel}>{L.adminMelds}</label>
+                  <textarea
+                    style={S.adminTextarea}
+                    value={p.melds}
+                    onChange={(e) => updateAdminPlayer(i, { melds: e.target.value })}
+                    rows={1}
+                  />
+                </div>
+                <div style={S.adminField}>
+                  <label style={S.adminLabel}>{L.adminDiscards}</label>
+                  <textarea
+                    style={S.adminTextarea}
+                    value={p.discards}
+                    onChange={(e) => updateAdminPlayer(i, { discards: e.target.value })}
+                    rows={1}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={S.adminFooter}>
+            <button tabIndex={-1} style={S.langBtn} onClick={closeAdmin}>{L.adminCancel}</button>
+            <button tabIndex={-1} style={S.startBtn} onClick={applyAdmin}>{L.adminApply}</button>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -1861,6 +2154,7 @@ function MahjongGame() {
             </div>
             <div style={S.menuHelpRow}>
               <button tabIndex={-1} style={S.langBtn} onClick={() => setShowHelp(true)}>{L.howToPlay}</button>
+              <button tabIndex={-1} style={S.langBtn} onClick={startWithAdmin}>{L.adminMenuBtn}</button>
             </div>
           </div>
           <div style={S.menuAside}>
@@ -1875,6 +2169,7 @@ function MahjongGame() {
         </div>
       </div>
       {showHelp && renderHelpOverlay()}
+      {showAdmin && renderAdminOverlay()}
       </>
     );
   }
@@ -1907,6 +2202,7 @@ function MahjongGame() {
           {isPlayerTurn && canDraw && <span style={S.statusTextYou}>{L.turnDraw}</span>}
           {isPlayerTurn && canDiscard && <span style={S.statusTextYou}>{L.turnDiscard}</span>}
           <button tabIndex={-1} style={S.langBtn} onClick={() => setLang(lang === "en" ? "zh" : "en")}>{L.langToggle}</button>
+          <button tabIndex={-1} style={S.menuBtn} onClick={() => openAdmin()}>{L.adminBtn}</button>
           <button tabIndex={-1} style={S.menuBtn} onClick={() => setShowHelp(true)}>?</button>
           <button tabIndex={-1} style={S.menuBtn} onClick={() => setShowMenu(true)}>☰</button>
         </div>
@@ -2682,6 +2978,58 @@ function makeStyles(vw, vh) {
   helpRuleBox: {
     background: "rgba(0,0,0,0.2)", border: "1px solid rgba(201,169,97,0.12)",
     borderRadius: s(8), padding: `${s(10)}px ${s(14)}px`, margin: `${s(8)}px 0`,
+  },
+
+  // ---- ADMIN CONSOLE ----
+  adminPanel: {
+    background: `linear-gradient(145deg, ${bgLight}, ${bg})`, border: `2px solid ${gold}`,
+    borderRadius: s(14), padding: 0, maxWidth: s(720), width: "92%", maxHeight: "88vh",
+    boxShadow: "0 24px 80px rgba(0,0,0,0.6)", display: "flex", flexDirection: "column",
+  },
+  adminHeader: {
+    display: "flex", justifyContent: "space-between", alignItems: "center",
+    padding: `${s(14)}px ${s(20)}px`, borderBottom: `1px solid rgba(201,169,97,0.2)`, flexShrink: 0,
+  },
+  adminTitle: { color: gold, fontSize: s(20), margin: 0, letterSpacing: 2 },
+  adminScroll: {
+    overflowY: "auto", padding: `${s(14)}px ${s(20)}px`, flex: 1,
+  },
+  adminLegend: { color: greenDim, fontSize: ts(11), lineHeight: 1.5, margin: `${s(4)}px 0` },
+  adminTopRow: {
+    display: "flex", gap: s(14), flexWrap: "wrap", marginTop: s(12), marginBottom: s(10),
+  },
+  adminInlineLabel: {
+    color: gold, fontSize: ts(12), display: "inline-flex", alignItems: "center", gap: s(6),
+  },
+  adminField: { display: "flex", flexDirection: "column", gap: s(4), marginTop: s(8) },
+  adminLabel: { color: gold, fontSize: ts(11), letterSpacing: 1, textTransform: "uppercase", fontWeight: "bold" },
+  adminTextarea: {
+    background: "rgba(0,0,0,0.35)", border: `1px solid rgba(201,169,97,0.25)`,
+    borderRadius: s(6), padding: `${s(6)}px ${s(10)}px`, color: "#d4c9a8",
+    fontFamily: "monospace", fontSize: ts(12), outline: "none", resize: "vertical",
+    width: "100%",
+  },
+  adminSelect: {
+    background: "rgba(0,0,0,0.35)", border: `1px solid rgba(201,169,97,0.3)`, color: gold,
+    padding: `${s(4)}px ${s(8)}px`, borderRadius: s(4), fontSize: ts(12), outline: "none",
+  },
+  adminScoreInput: {
+    background: "rgba(0,0,0,0.35)", border: `1px solid rgba(201,169,97,0.3)`, color: gold,
+    padding: `${s(4)}px ${s(8)}px`, borderRadius: s(4), fontSize: ts(12), outline: "none",
+    width: s(80), fontFamily: "monospace",
+  },
+  adminPlayerBox: {
+    background: "rgba(0,0,0,0.25)", border: `1px solid rgba(201,169,97,0.18)`,
+    borderRadius: s(8), padding: `${s(10)}px ${s(14)}px`, marginTop: s(12),
+  },
+  adminPlayerHeader: {
+    display: "flex", justifyContent: "space-between", alignItems: "center",
+    gap: s(10), flexWrap: "wrap",
+  },
+  adminPlayerName: { color: gold, fontSize: ts(13), fontWeight: "bold", letterSpacing: 1 },
+  adminFooter: {
+    display: "flex", justifyContent: "flex-end", gap: s(10),
+    padding: `${s(12)}px ${s(20)}px`, borderTop: `1px solid rgba(201,169,97,0.2)`, flexShrink: 0,
   },
   };
 }
