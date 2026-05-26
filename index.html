@@ -2622,12 +2622,12 @@ function makeStyles(vw, vh) {
   },
   winTile: { ...tileBase, fontSize: s(48), lineHeight: 1 },
   winTileHighlight: {
-    background: "rgba(201,169,97,0.28)",
-    borderRadius: s(8),
-    boxShadow: `0 0 ${s(14)}px rgba(201,169,97,0.85), inset 0 0 0 1px ${gold}`,
-    padding: `${s(2)}px ${s(4)}px`,
-    textShadow: `0 0 ${s(8)}px rgba(255,220,140,0.9)`,
-    filter: "brightness(1.15) saturate(1.2)",
+    // No padded box (it would wrap the glyph's em-box, which sits above the
+    // visible tile and shows up off-center). Use shape-following effects only:
+    // drop-shadow follows the glyph silhouette, and text-shadow halos the glyph
+    // itself, so the highlight is centered on what's actually drawn.
+    filter: `brightness(1.2) saturate(1.35) drop-shadow(0 0 ${s(6)}px rgba(255,220,140,1)) drop-shadow(0 0 ${s(14)}px rgba(201,169,97,0.7))`,
+    textShadow: `0 0 ${s(10)}px rgba(255,220,140,1), 0 0 ${s(22)}px rgba(201,169,97,0.6)`,
   },
   winningTileLabel: {
     color: gold, fontSize: ts(11), letterSpacing: 1, textTransform: "uppercase",
