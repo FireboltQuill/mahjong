@@ -4,8 +4,7 @@
 const NAMES_STORAGE_KEY = "mahjong_ai_names";
 
 const DEFAULT_AI_NAMES = [
-  "Alice", "Bob", "Charlie", "Diana", "Eli", "Fiona",
-  "Gus", "Hana", "Ivan", "Julia", "Ken", "Lily",
+  "Elphelt", "Manon", "Lidia", "Ramlethal", "Hilda", 
 ];
 
 function loadAiNames() {
