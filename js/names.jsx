@@ -7,10 +7,13 @@ const NAMES_GROUPS_KEY = "mahjong_name_groups";
 const NAMES_LEGACY_KEY = "mahjong_ai_names"; // pre-groups flat-list key
 
 const DEFAULT_NAME_GROUPS = [
-  { name: "Fighters", names: ["Elphelt", "Manon", "Lidia", "Ramlethal", "Hilda"] },
-  { name: "Classic",  names: ["Alice", "Bob", "Charlie", "Diana", "Eli", "Fiona", "Gus", "Hana"] },
-  { name: "Animals",  names: ["Bear", "Fox", "Wolf", "Owl", "Hawk", "Otter", "Lynx", "Crow"] },
-  { name: "Mythic",   names: ["Zeus", "Hera", "Apollo", "Athena", "Odin", "Freya", "Thor", "Loki"] },
+  { name: "Street Fighter", names: ["Manon", "Juri", "Cammy", "Chun Li"] },
+  { name: "Guilty Gear",  names: ["Elphelt", "Dizzy", "Ramlethal", "Baiken"] },
+  { name: "Tekken",  names: ["Lidia", "Jun", "Zafina", "Lili"] },
+  { name: "Bleach",   names: ["Retsu", "Sode no Shirayuki", "Yoruichi", "Senjumaru"] },
+  { name: "Naruto",   names: ["Mei", "Temari", "Kaguya", "Samui"] },
+  { name: "One Piece", names: ["Robin", "Boa", "Vivi", "Jewelry"] },
+  { name: "Freezing",  names: ["Chiffon", "Cassandra", "Satellizer", "Kazuha"] },
 ];
 
 function sanitizeGroups(arr) {
