@@ -124,9 +124,8 @@ const LANG = {
     drawExhausted: "Draw — Wall Exhausted", winHand: "Winning hand:", winningTile: "Winning tile",
     sevenPairs: "Seven Pairs (七小对)",
     gameComplete: "Game Complete!", backMenu: "Back to Menu", nextRound: "Next Round →",
-    showGameStats: "Show Stats",
-    backStandings: "← Back to Standings",
     tabWinner: "Who Won", tabScoring: "Scoring", tabStats: "Stats",
+    tabStandings: "Standings",
     scoringNoExchange: "No points exchanged.",
     gameSummary: "Game Summary →",
     gameOverTitle: "🏆 Game Over",
@@ -139,7 +138,6 @@ const LANG = {
     standingsNow: "Current Standings",
     winnerPersonality: "Winner's style",
     // Stats — game
-    gameStatsTitle: "Game Stats",
     playerStatsTitle: "Per-player Stats",
     statWins: "Wins",
     statDianpao: "Dianpao given",
@@ -254,9 +252,8 @@ const LANG = {
     drawExhausted: "流局 — 牌墙摸完", winHand: "赢牌：", winningTile: "胡的牌",
     sevenPairs: "七小对",
     gameComplete: "游戏结束！", backMenu: "返回主菜单", nextRound: "下一局 →",
-    showGameStats: "查看统计",
-    backStandings: "← 返回排名",
     tabWinner: "胜者", tabScoring: "结算", tabStats: "统计",
+    tabStandings: "排名",
     scoringNoExchange: "无分数变化。",
     gameSummary: "总结 →",
     gameOverTitle: "🏆 游戏结束",
@@ -267,7 +264,6 @@ const LANG = {
     wallRemainingLabel: "牌墙剩余",
     standingsNow: "当前排名",
     winnerPersonality: "胜者风格",
-    gameStatsTitle: "全局统计",
     playerStatsTitle: "玩家统计",
     statWins: "胜局",
     statDianpao: "点炮次数",
@@ -1354,7 +1350,7 @@ function MahjongGame() {
   const [showAdmin, setShowAdmin] = useState(false);
   const [adminInput, setAdminInput] = useState(null);
   const [roundOverTab, setRoundOverTab] = useState("winner"); // "winner" | "scoring" | "stats"
-  const [showGameStats, setShowGameStats] = useState(false);
+  const [gameOverTab, setGameOverTab] = useState("standings"); // "standings" | "stats"
   const [gameOverAcknowledged, setGameOverAcknowledged] = useState(false);
   const [winSize, setWinSize] = useState({ w: typeof window !== "undefined" ? window.innerWidth : 1200, h: typeof window !== "undefined" ? window.innerHeight : 800 });
   const logRef = useRef(null);
@@ -1841,7 +1837,7 @@ function MahjongGame() {
     setSelectedTileIdx(null);
     setClaimOptions(null);
     setRoundOverTab("winner");
-    setShowGameStats(false);
+    setGameOverTab("standings");
     setGameOverAcknowledged(false);
   }
 
@@ -1928,7 +1924,7 @@ function MahjongGame() {
     setSelectedTileIdx(null);
     setClaimOptions(null);
     setRoundOverTab("winner");
-    setShowGameStats(false);
+    setGameOverTab("standings");
     setGameOverAcknowledged(false);
     openAdmin(initialState);
   }
@@ -2726,118 +2722,24 @@ function MahjongGame() {
       {gameOver && gameOverAcknowledged && (
         <div style={S.overlay}>
           <div style={S.roundOverBox}>
-            <h2 style={S.winTitle}>{showGameStats ? L.gameStatsTitle : L.gameOverTitle}</h2>
-            {showGameStats ? (
-              (() => {
-                // Aggregate per-player stats from the recorded round results.
-                const results = state.roundResults;
-                const stats = state.players.map((_, i) => {
-                  const wins = results.filter((r) => r.winner === i);
-                  const dianpaos = results.filter((r) => r.discarder === i && !r.isDraw).length;
-                  const deltas = results.map((r) => r.deltas[i]);
-                  const biggestGain = deltas.length ? Math.max(0, ...deltas) : 0;
-                  const biggestLoss = deltas.length ? Math.min(0, ...deltas) : 0;
-                  return {
-                    wins: wins.length,
-                    dianpaos,
-                    biggestGain,
-                    biggestLoss,
-                    smallHu: wins.filter((r) => !r.largeHu).length,
-                    largeHu: wins.filter((r) => r.largeHu).length,
-                    zimo: wins.filter((r) => r.type === "zimo").length,
-                    sevenPairs: wins.filter((r) => r.sevenPairs).length,
-                  };
-                });
-                // Best single haul of the match.
-                let best = null;
-                results.forEach((r) => {
-                  if (r.winner === null) return;
-                  const gain = r.deltas[r.winner];
-                  if (!best || gain > best.gain) best = { gain, winner: r.winner, round: r.round };
-                });
-                // First round each player crossed below 0.
-                const bankruptcies = state.players.map((_, i) => {
-                  for (const r of results) {
-                    if (r.scoresAfter[i] < 0) return r.round;
-                  }
-                  return null;
-                });
-                const anyBroke = bankruptcies.some((b) => b !== null);
-                return (
-                  <div style={S.statsView}>
-                    <p style={S.statsSubtitle}>{L.playerStatsTitle}</p>
-                    <div style={S.statsTable}>
-                      <div style={S.statsTableHeaderRow}>
-                        <span></span>
-                        {state.players.map((_, i) => (
-                          <span key={i} style={S.statsTableHeader}>{SL[i]}</span>
-                        ))}
-                      </div>
-                      {[
-                        [L.statWins, (s) => s.wins],
-                        [L.statSmallHu, (s) => s.smallHu],
-                        [L.statLargeHu, (s) => s.largeHu],
-                        [L.statZimo, (s) => s.zimo],
-                        [L.statSevenPairs, (s) => s.sevenPairs],
-                        [L.statDianpao, (s) => s.dianpaos],
-                        [L.statBiggestGain, (s) => s.biggestGain > 0 ? `+${s.biggestGain}` : "—"],
-                        [L.statBiggestLoss, (s) => s.biggestLoss < 0 ? s.biggestLoss : "—"],
-                      ].map(([label, accessor], rowIdx) => (
-                        <div key={rowIdx} style={S.statsTableRow}>
-                          <span style={S.statsTableRowLabel}>{label}</span>
-                          {stats.map((s, i) => (
-                            <span key={i} style={S.statsTableCell}>{accessor(s)}</span>
-                          ))}
-                        </div>
-                      ))}
-                    </div>
-
-                    {best && (
-                      <>
-                        <p style={S.statsSubtitle}>{L.bestRoundLabel}</p>
-                        <p style={S.bestRoundLine}>{L.bestRoundLine(SL[best.winner], best.gain, best.round)}</p>
-                      </>
-                    )}
-
-                    <p style={S.statsSubtitle}>{L.bankruptcyTitle}</p>
-                    {anyBroke ? (
-                      <div style={S.bankruptcyList}>
-                        {bankruptcies.map((r, i) => r !== null && (
-                          <p key={i} style={S.bankruptcyLine}>{L.bankruptcyLine(SL[i], r)}</p>
-                        ))}
-                      </div>
-                    ) : (
-                      <p style={S.bankruptcyLine}>{L.noBankruptcy}</p>
-                    )}
-
-                    <p style={S.statsSubtitle}>{L.historyTitle}</p>
-                    <div style={S.historyBox}>
-                      {state.roundResults.map((r) => (
-                        <div key={r.round} style={S.historyRow}>
-                          <span style={S.historyRound}>R{r.round}</span>
-                          {r.isDraw ? (
-                            <span style={S.historyEntry}>{L.historyDraw}</span>
-                          ) : (
-                            <span style={S.historyEntry}>
-                              <span style={S.historyName}>{SL[r.winner]}</span>
-                              <span style={S.historyGain}> +{r.deltas[r.winner]}</span>
-                              {" · "}
-                              {r.type === "zimo"
-                                ? L.historyZimo
-                                : L.historyDianpao(SL[r.discarder])}
-                              {" · "}
-                              {r.largeHu ? L.largeHu : L.smallHu}
-                              {r.sevenPairs ? ` · ${L.statSevenPairs}` : ""}
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })()
-            ) : (
-              <>
+            <h2 style={S.winTitle}>{L.gameOverTitle}</h2>
+            <div style={S.tabBar}>
+              {[
+                ["standings", L.tabStandings],
+                ["stats", L.tabStats],
+              ].map(([id, label]) => (
+                <button
+                  key={id}
+                  tabIndex={-1}
+                  style={{ ...S.tabBtn, ...(gameOverTab === id ? S.tabBtnActive : {}) }}
+                  onClick={() => setGameOverTab(id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div style={S.tabPanes}>
+              <div style={{ ...S.tabPane, ...(gameOverTab !== "standings" ? S.tabPaneHidden : {}) }} aria-hidden={gameOverTab !== "standings"}>
                 <p style={S.finalStandingsLabel}>{L.finalStandings}</p>
                 <div style={S.standingsBox}>
                   {state.players
@@ -2851,12 +2753,116 @@ function MahjongGame() {
                       </div>
                     ))}
                 </div>
-              </>
-            )}
+              </div>
+              <div style={{ ...S.tabPane, ...(gameOverTab !== "stats" ? S.tabPaneHidden : {}) }} aria-hidden={gameOverTab !== "stats"}>
+                {(() => {
+                  const results = state.roundResults;
+                  const stats = state.players.map((_, i) => {
+                    const wins = results.filter((r) => r.winner === i);
+                    const dianpaos = results.filter((r) => r.discarder === i && !r.isDraw).length;
+                    const deltas = results.map((r) => r.deltas[i]);
+                    const biggestGain = deltas.length ? Math.max(0, ...deltas) : 0;
+                    const biggestLoss = deltas.length ? Math.min(0, ...deltas) : 0;
+                    return {
+                      wins: wins.length,
+                      dianpaos,
+                      biggestGain,
+                      biggestLoss,
+                      smallHu: wins.filter((r) => !r.largeHu).length,
+                      largeHu: wins.filter((r) => r.largeHu).length,
+                      zimo: wins.filter((r) => r.type === "zimo").length,
+                      sevenPairs: wins.filter((r) => r.sevenPairs).length,
+                    };
+                  });
+                  let best = null;
+                  results.forEach((r) => {
+                    if (r.winner === null) return;
+                    const gain = r.deltas[r.winner];
+                    if (!best || gain > best.gain) best = { gain, winner: r.winner, round: r.round };
+                  });
+                  const bankruptcies = state.players.map((_, i) => {
+                    for (const r of results) {
+                      if (r.scoresAfter[i] < 0) return r.round;
+                    }
+                    return null;
+                  });
+                  const anyBroke = bankruptcies.some((b) => b !== null);
+                  return (
+                    <div style={S.statsView}>
+                      <p style={S.statsSubtitle}>{L.playerStatsTitle}</p>
+                      <div style={S.statsTable}>
+                        <div style={S.statsTableHeaderRow}>
+                          <span></span>
+                          {state.players.map((_, i) => (
+                            <span key={i} style={S.statsTableHeader}>{SL[i]}</span>
+                          ))}
+                        </div>
+                        {[
+                          [L.statWins, (s) => s.wins],
+                          [L.statSmallHu, (s) => s.smallHu],
+                          [L.statLargeHu, (s) => s.largeHu],
+                          [L.statZimo, (s) => s.zimo],
+                          [L.statSevenPairs, (s) => s.sevenPairs],
+                          [L.statDianpao, (s) => s.dianpaos],
+                          [L.statBiggestGain, (s) => s.biggestGain > 0 ? `+${s.biggestGain}` : "—"],
+                          [L.statBiggestLoss, (s) => s.biggestLoss < 0 ? s.biggestLoss : "—"],
+                        ].map(([label, accessor], rowIdx) => (
+                          <div key={rowIdx} style={S.statsTableRow}>
+                            <span style={S.statsTableRowLabel}>{label}</span>
+                            {stats.map((s, i) => (
+                              <span key={i} style={S.statsTableCell}>{accessor(s)}</span>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+
+                      {best && (
+                        <>
+                          <p style={S.statsSubtitle}>{L.bestRoundLabel}</p>
+                          <p style={S.bestRoundLine}>{L.bestRoundLine(SL[best.winner], best.gain, best.round)}</p>
+                        </>
+                      )}
+
+                      <p style={S.statsSubtitle}>{L.bankruptcyTitle}</p>
+                      {anyBroke ? (
+                        <div style={S.bankruptcyList}>
+                          {bankruptcies.map((r, i) => r !== null && (
+                            <p key={i} style={S.bankruptcyLine}>{L.bankruptcyLine(SL[i], r)}</p>
+                          ))}
+                        </div>
+                      ) : (
+                        <p style={S.bankruptcyLine}>{L.noBankruptcy}</p>
+                      )}
+
+                      <p style={S.statsSubtitle}>{L.historyTitle}</p>
+                      <div style={S.historyBox}>
+                        {state.roundResults.map((r) => (
+                          <div key={r.round} style={S.historyRow}>
+                            <span style={S.historyRound}>R{r.round}</span>
+                            {r.isDraw ? (
+                              <span style={S.historyEntry}>{L.historyDraw}</span>
+                            ) : (
+                              <span style={S.historyEntry}>
+                                <span style={S.historyName}>{SL[r.winner]}</span>
+                                <span style={S.historyGain}> +{r.deltas[r.winner]}</span>
+                                {" · "}
+                                {r.type === "zimo"
+                                  ? L.historyZimo
+                                  : L.historyDianpao(SL[r.discarder])}
+                                {" · "}
+                                {r.largeHu ? L.largeHu : L.smallHu}
+                                {r.sevenPairs ? ` · ${L.statSevenPairs}` : ""}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
             <div style={S.roundOverActions}>
-              <button tabIndex={-1} style={S.langBtn} onClick={() => setShowGameStats(!showGameStats)}>
-                {showGameStats ? L.backStandings : L.showGameStats}
-              </button>
               <button tabIndex={-1} style={S.startBtn} onClick={() => setShowMenu(true)}>{L.backMenu}</button>
             </div>
           </div>
