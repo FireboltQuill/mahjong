@@ -125,11 +125,39 @@ const LANG = {
     sevenPairs: "Seven Pairs (七小对)",
     gameComplete: "Game Complete!", backMenu: "Back to Menu", nextRound: "Next Round →",
     showBoard: "Show Board", backResult: "← Back to Result",
+    showRoundStats: "Show Stats", showGameStats: "Show Stats",
+    backStandings: "← Back to Standings",
     gameSummary: "Game Summary →",
     gameOverTitle: "🏆 Game Over",
     finalStandings: "Final Standings",
     rankSuffix: (n) => ({1:"st",2:"nd",3:"rd"})[n] || "th",
     boardHandLabel: "Hand", boardMeldsLabel: "Melds", boardDiscardsLabel: "Discards",
+    // Stats — round
+    roundStatsTitle: "Round Stats",
+    roundHeader: (n, total, wind, dealer) => `Round ${n} of ${total} · ${wind} prevailing · Dealer: ${dealer}`,
+    wallRemainingLabel: "Wall remaining",
+    standingsNow: "Current Standings",
+    winnerPersonality: "Winner's style",
+    // Stats — game
+    gameStatsTitle: "Game Stats",
+    playerStatsTitle: "Per-player Stats",
+    statWins: "Wins",
+    statDianpao: "Dianpao given",
+    statBiggestGain: "Biggest gain",
+    statBiggestLoss: "Biggest loss",
+    statSmallHu: "Small Hu",
+    statLargeHu: "Large Hu",
+    statZimo: "Zimo",
+    statSevenPairs: "7 Pairs",
+    historyTitle: "Round History",
+    historyDraw: "Draw",
+    historyZimo: "Zimo",
+    historyDianpao: (name) => `Dianpao from ${name}`,
+    bestRoundLabel: "Biggest single haul",
+    bestRoundLine: (name, amt, n) => `${name} +${amt} in Round ${n}`,
+    bankruptcyTitle: "Bankruptcy",
+    bankruptcyLine: (name, n) => `${name} went broke at Round ${n}`,
+    noBankruptcy: "Nobody went broke.",
     open: "open", hidden: "hidden", tiles: "tiles",
     turnOrder: "Counter-clockwise",
     posLeft: "← Left", posRight: "Right →", posAcross: "Across",
@@ -227,11 +255,37 @@ const LANG = {
     sevenPairs: "七小对",
     gameComplete: "游戏结束！", backMenu: "返回主菜单", nextRound: "下一局 →",
     showBoard: "查看牌局", backResult: "← 返回结果",
+    showRoundStats: "查看统计", showGameStats: "查看统计",
+    backStandings: "← 返回排名",
     gameSummary: "总结 →",
     gameOverTitle: "🏆 游戏结束",
     finalStandings: "最终排名",
     rankSuffix: () => "",
     boardHandLabel: "手牌", boardMeldsLabel: "副露", boardDiscardsLabel: "弃牌",
+    roundStatsTitle: "本局统计",
+    roundHeader: (n, total, wind, dealer) => `第${n}局，共${total}局 · ${wind}风 · 庄家：${dealer}`,
+    wallRemainingLabel: "牌墙剩余",
+    standingsNow: "当前排名",
+    winnerPersonality: "胜者风格",
+    gameStatsTitle: "全局统计",
+    playerStatsTitle: "玩家统计",
+    statWins: "胜局",
+    statDianpao: "点炮次数",
+    statBiggestGain: "最大盈",
+    statBiggestLoss: "最大亏",
+    statSmallHu: "小胡",
+    statLargeHu: "大胡",
+    statZimo: "自摸",
+    statSevenPairs: "七对",
+    historyTitle: "对局记录",
+    historyDraw: "流局",
+    historyZimo: "自摸",
+    historyDianpao: (name) => `点炮于${name}`,
+    bestRoundLabel: "最大单局收益",
+    bestRoundLine: (name, amt, n) => `${name} +${amt}（第${n}局）`,
+    bankruptcyTitle: "破产",
+    bankruptcyLine: (name, n) => `${name}在第${n}局破产`,
+    noBankruptcy: "无人破产。",
     open: "明", hidden: "暗", tiles: "张",
     turnOrder: "逆时针",
     posLeft: "← 左", posRight: "右 →", posAcross: "对面",
@@ -1300,6 +1354,8 @@ function MahjongGame() {
   const [showAdmin, setShowAdmin] = useState(false);
   const [adminInput, setAdminInput] = useState(null);
   const [showBoardState, setShowBoardState] = useState(false);
+  const [showRoundStats, setShowRoundStats] = useState(false);
+  const [showGameStats, setShowGameStats] = useState(false);
   const [gameOverAcknowledged, setGameOverAcknowledged] = useState(false);
   const [winSize, setWinSize] = useState({ w: typeof window !== "undefined" ? window.innerWidth : 1200, h: typeof window !== "undefined" ? window.innerHeight : 800 });
   const logRef = useRef(null);
@@ -1350,8 +1406,50 @@ function MahjongGame() {
   useEffect(() => {
     if (state.winner === null && !state.isDraw) {
       setShowBoardState(false);
+      setShowRoundStats(false);
     }
   }, [state.winner, state.isDraw]);
+
+  // Record per-round outcome the first time a round ends, so the game-over
+  // stats and round history can be computed without re-tracking it elsewhere.
+  useEffect(() => {
+    if (state.winner === null && !state.isDraw) return;
+    if (state.roundResults.some((r) => r.round === state.roundNumber)) return;
+    setState((prev) => {
+      if (prev.roundResults.some((r) => r.round === prev.roundNumber)) return prev;
+      const base = {
+        round: prev.roundNumber,
+        dealer: prev.dealer,
+        roundWind: prev.roundWind,
+        wallRemaining: prev.wall.length,
+        scoresAfter: [...prev.scores],
+      };
+      const result = prev.winner !== null
+        ? {
+            ...base,
+            winner: prev.winner,
+            type: prev.winInfo.type,
+            discarder: prev.winInfo.discarder,
+            deltas: prev.scoreBreakdown.deltas,
+            baseValue: prev.scoreBreakdown.base,
+            sevenPairs: prev.winInfo.sevenPairs,
+            largeHu: prev.winInfo.largeHu,
+            isDraw: false,
+          }
+        : {
+            ...base,
+            winner: null,
+            type: "draw",
+            discarder: null,
+            deltas: [0, 0, 0, 0],
+            baseValue: 0,
+            sevenPairs: false,
+            largeHu: false,
+            isDraw: true,
+          };
+      return { ...prev, roundResults: [...prev.roundResults, result] };
+    });
+  }, [state.winner, state.isDraw, state.roundNumber]);
 
   // AI auto-play
   useEffect(() => {
@@ -1745,6 +1843,8 @@ function MahjongGame() {
     setSelectedTileIdx(null);
     setClaimOptions(null);
     setShowBoardState(false);
+    setShowRoundStats(false);
+    setShowGameStats(false);
     setGameOverAcknowledged(false);
   }
 
@@ -1831,6 +1931,8 @@ function MahjongGame() {
     setSelectedTileIdx(null);
     setClaimOptions(null);
     setShowBoardState(false);
+    setShowRoundStats(false);
+    setShowGameStats(false);
     setGameOverAcknowledged(false);
     openAdmin(initialState);
   }
@@ -2445,7 +2547,39 @@ function MahjongGame() {
       {roundOver && !gameOverAcknowledged && (
         <div style={S.overlay}>
           <div style={{ ...S.roundOverBox, ...(showBoardState ? S.roundOverBoxWide : {}) }}>
-            {showBoardState ? (
+            {showRoundStats ? (
+              <div style={S.statsView}>
+                <h2 style={S.winTitle}>{L.roundStatsTitle}</h2>
+                <p style={S.statsHeader}>
+                  {L.roundHeader(state.roundNumber, state.totalRounds, L.windDisplay(state.roundWind), SL[state.dealer])}
+                </p>
+                <div style={S.statsKvBox}>
+                  <div style={S.statsKvRow}>
+                    <span style={S.statsKvLabel}>{L.wallRemainingLabel}</span>
+                    <span style={S.statsKvValue}>{state.wall.length}</span>
+                  </div>
+                  {state.winner !== null && state.personalities && state.personalities[state.winner] && difficulty !== "easy" && (
+                    <div style={S.statsKvRow}>
+                      <span style={S.statsKvLabel}>{L.winnerPersonality}</span>
+                      <span style={S.statsKvValue}>{personalityLabel(state.personalities[state.winner])}</span>
+                    </div>
+                  )}
+                </div>
+                <p style={S.statsSubtitle}>{L.standingsNow}</p>
+                <div style={S.standingsBox}>
+                  {state.players
+                    .map((_, i) => ({ idx: i, score: state.scores[i] }))
+                    .sort((a, b) => b.score - a.score)
+                    .map((entry, rank) => (
+                      <div key={entry.idx} style={rank === 0 ? S.standingsRowWinner : S.standingsRow}>
+                        <span style={S.standingsRank}>{rank + 1}{L.rankSuffix(rank + 1)}</span>
+                        <span style={S.standingsName}>{SL[entry.idx]}</span>
+                        <span style={{ ...S.standingsScore, ...(entry.score < 0 ? { color: "#f0a0a0" } : {}) }}>{entry.score}</span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            ) : showBoardState ? (
               <div style={S.boardStateView}>
                 <h2 style={S.winTitle}>{L.showBoard}</h2>
                 {state.players.map((p, i) => (
@@ -2605,8 +2739,25 @@ function MahjongGame() {
               </>
             )}
             <div style={S.roundOverActions}>
-              <button tabIndex={-1} style={S.langBtn} onClick={() => setShowBoardState(!showBoardState)}>
+              <button
+                tabIndex={-1}
+                style={S.langBtn}
+                onClick={() => {
+                  setShowBoardState(!showBoardState);
+                  setShowRoundStats(false);
+                }}
+              >
                 {showBoardState ? L.backResult : L.showBoard}
+              </button>
+              <button
+                tabIndex={-1}
+                style={S.langBtn}
+                onClick={() => {
+                  setShowRoundStats(!showRoundStats);
+                  setShowBoardState(false);
+                }}
+              >
+                {showRoundStats ? L.backResult : L.showRoundStats}
               </button>
               {gameOver ? (
                 <button tabIndex={-1} style={S.startBtn} onClick={() => setGameOverAcknowledged(true)}>{L.gameSummary}</button>
@@ -2622,21 +2773,139 @@ function MahjongGame() {
       {gameOver && gameOverAcknowledged && (
         <div style={S.overlay}>
           <div style={S.roundOverBox}>
-            <h2 style={S.winTitle}>{L.gameOverTitle}</h2>
-            <p style={S.finalStandingsLabel}>{L.finalStandings}</p>
-            <div style={S.standingsBox}>
-              {state.players
-                .map((p, i) => ({ idx: i, score: state.scores[i] }))
-                .sort((a, b) => b.score - a.score)
-                .map((entry, rank) => (
-                  <div key={entry.idx} style={rank === 0 ? S.standingsRowWinner : S.standingsRow}>
-                    <span style={S.standingsRank}>{rank + 1}{L.rankSuffix(rank + 1)}</span>
-                    <span style={S.standingsName}>{SL[entry.idx]}{rank === 0 ? " 🏆" : ""}</span>
-                    <span style={S.standingsScore}>{entry.score}</span>
+            <h2 style={S.winTitle}>{showGameStats ? L.gameStatsTitle : L.gameOverTitle}</h2>
+            {showGameStats ? (
+              (() => {
+                // Aggregate per-player stats from the recorded round results.
+                const results = state.roundResults;
+                const stats = state.players.map((_, i) => {
+                  const wins = results.filter((r) => r.winner === i);
+                  const dianpaos = results.filter((r) => r.discarder === i && !r.isDraw).length;
+                  const deltas = results.map((r) => r.deltas[i]);
+                  const biggestGain = deltas.length ? Math.max(0, ...deltas) : 0;
+                  const biggestLoss = deltas.length ? Math.min(0, ...deltas) : 0;
+                  return {
+                    wins: wins.length,
+                    dianpaos,
+                    biggestGain,
+                    biggestLoss,
+                    smallHu: wins.filter((r) => !r.largeHu).length,
+                    largeHu: wins.filter((r) => r.largeHu).length,
+                    zimo: wins.filter((r) => r.type === "zimo").length,
+                    sevenPairs: wins.filter((r) => r.sevenPairs).length,
+                  };
+                });
+                // Best single haul of the match.
+                let best = null;
+                results.forEach((r) => {
+                  if (r.winner === null) return;
+                  const gain = r.deltas[r.winner];
+                  if (!best || gain > best.gain) best = { gain, winner: r.winner, round: r.round };
+                });
+                // First round each player crossed below 0.
+                const bankruptcies = state.players.map((_, i) => {
+                  for (const r of results) {
+                    if (r.scoresAfter[i] < 0) return r.round;
+                  }
+                  return null;
+                });
+                const anyBroke = bankruptcies.some((b) => b !== null);
+                return (
+                  <div style={S.statsView}>
+                    <p style={S.statsSubtitle}>{L.playerStatsTitle}</p>
+                    <div style={S.statsTable}>
+                      <div style={S.statsTableHeaderRow}>
+                        <span></span>
+                        {state.players.map((_, i) => (
+                          <span key={i} style={S.statsTableHeader}>{SL[i]}</span>
+                        ))}
+                      </div>
+                      {[
+                        [L.statWins, (s) => s.wins],
+                        [L.statSmallHu, (s) => s.smallHu],
+                        [L.statLargeHu, (s) => s.largeHu],
+                        [L.statZimo, (s) => s.zimo],
+                        [L.statSevenPairs, (s) => s.sevenPairs],
+                        [L.statDianpao, (s) => s.dianpaos],
+                        [L.statBiggestGain, (s) => s.biggestGain > 0 ? `+${s.biggestGain}` : "—"],
+                        [L.statBiggestLoss, (s) => s.biggestLoss < 0 ? s.biggestLoss : "—"],
+                      ].map(([label, accessor], rowIdx) => (
+                        <div key={rowIdx} style={S.statsTableRow}>
+                          <span style={S.statsTableRowLabel}>{label}</span>
+                          {stats.map((s, i) => (
+                            <span key={i} style={S.statsTableCell}>{accessor(s)}</span>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+
+                    {best && (
+                      <>
+                        <p style={S.statsSubtitle}>{L.bestRoundLabel}</p>
+                        <p style={S.bestRoundLine}>{L.bestRoundLine(SL[best.winner], best.gain, best.round)}</p>
+                      </>
+                    )}
+
+                    <p style={S.statsSubtitle}>{L.bankruptcyTitle}</p>
+                    {anyBroke ? (
+                      <div style={S.bankruptcyList}>
+                        {bankruptcies.map((r, i) => r !== null && (
+                          <p key={i} style={S.bankruptcyLine}>{L.bankruptcyLine(SL[i], r)}</p>
+                        ))}
+                      </div>
+                    ) : (
+                      <p style={S.bankruptcyLine}>{L.noBankruptcy}</p>
+                    )}
+
+                    <p style={S.statsSubtitle}>{L.historyTitle}</p>
+                    <div style={S.historyBox}>
+                      {state.roundResults.map((r) => (
+                        <div key={r.round} style={S.historyRow}>
+                          <span style={S.historyRound}>R{r.round}</span>
+                          {r.isDraw ? (
+                            <span style={S.historyEntry}>{L.historyDraw}</span>
+                          ) : (
+                            <span style={S.historyEntry}>
+                              <span style={S.historyName}>{SL[r.winner]}</span>
+                              <span style={S.historyGain}> +{r.deltas[r.winner]}</span>
+                              {" · "}
+                              {r.type === "zimo"
+                                ? L.historyZimo
+                                : L.historyDianpao(SL[r.discarder])}
+                              {" · "}
+                              {r.largeHu ? L.largeHu : L.smallHu}
+                              {r.sevenPairs ? ` · ${L.statSevenPairs}` : ""}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                ))}
+                );
+              })()
+            ) : (
+              <>
+                <p style={S.finalStandingsLabel}>{L.finalStandings}</p>
+                <div style={S.standingsBox}>
+                  {state.players
+                    .map((_, i) => ({ idx: i, score: state.scores[i] }))
+                    .sort((a, b) => b.score - a.score)
+                    .map((entry, rank) => (
+                      <div key={entry.idx} style={rank === 0 ? S.standingsRowWinner : S.standingsRow}>
+                        <span style={S.standingsRank}>{rank + 1}{L.rankSuffix(rank + 1)}</span>
+                        <span style={S.standingsName}>{SL[entry.idx]}{rank === 0 ? " 🏆" : ""}</span>
+                        <span style={{ ...S.standingsScore, ...(entry.score < 0 ? { color: "#f0a0a0" } : {}) }}>{entry.score}</span>
+                      </div>
+                    ))}
+                </div>
+              </>
+            )}
+            <div style={S.roundOverActions}>
+              <button tabIndex={-1} style={S.langBtn} onClick={() => setShowGameStats(!showGameStats)}>
+                {showGameStats ? L.backStandings : L.showGameStats}
+              </button>
+              <button tabIndex={-1} style={S.startBtn} onClick={() => setShowMenu(true)}>{L.backMenu}</button>
             </div>
-            <button tabIndex={-1} style={S.startBtn} onClick={() => setShowMenu(true)}>{L.backMenu}</button>
           </div>
         </div>
       )}
@@ -3118,6 +3387,70 @@ function makeStyles(vw, vh) {
   standingsRank: { fontFamily: "monospace" },
   standingsName: {},
   standingsScore: { fontFamily: "monospace" },
+
+  // Stats views (round and game)
+  statsView: { textAlign: "left" },
+  statsHeader: {
+    color: "#d4c9a8", fontSize: ts(12), letterSpacing: 0.5, marginBottom: s(10),
+    textAlign: "center",
+  },
+  statsKvBox: {
+    background: "rgba(0,0,0,0.25)", border: "1px solid rgba(201,169,97,0.18)",
+    borderRadius: s(8), padding: `${s(6)}px ${s(12)}px`, marginBottom: s(10),
+  },
+  statsKvRow: {
+    display: "flex", justifyContent: "space-between", alignItems: "center",
+    padding: `${s(4)}px 0`, fontSize: ts(12),
+  },
+  statsKvLabel: { color: greenDim, textTransform: "uppercase", letterSpacing: 1, fontSize: ts(10) },
+  statsKvValue: { color: gold, fontFamily: "monospace", fontWeight: "bold" },
+  statsSubtitle: {
+    color: gold, fontSize: ts(11), textTransform: "uppercase", letterSpacing: 2,
+    fontWeight: "bold", marginTop: s(12), marginBottom: s(6),
+  },
+  statsTable: {
+    background: "rgba(0,0,0,0.25)", border: "1px solid rgba(201,169,97,0.18)",
+    borderRadius: s(8), padding: `${s(6)}px ${s(8)}px`, marginBottom: s(8),
+  },
+  statsTableHeaderRow: {
+    display: "grid", gridTemplateColumns: "1.4fr repeat(4, 1fr)",
+    gap: s(4), padding: `${s(4)}px 0`, borderBottom: "1px solid rgba(201,169,97,0.2)",
+  },
+  statsTableHeader: {
+    color: gold, fontSize: ts(10), letterSpacing: 1, textTransform: "uppercase",
+    fontWeight: "bold", textAlign: "center",
+  },
+  statsTableRow: {
+    display: "grid", gridTemplateColumns: "1.4fr repeat(4, 1fr)",
+    gap: s(4), padding: `${s(4)}px 0`, borderTop: "1px dashed rgba(201,169,97,0.08)",
+    fontSize: ts(11),
+  },
+  statsTableRowLabel: { color: greenDim, fontSize: ts(10) },
+  statsTableCell: {
+    color: "#d4c9a8", fontFamily: "monospace", textAlign: "center",
+  },
+  bestRoundLine: {
+    color: gold, fontSize: ts(13), fontWeight: "bold", marginBottom: s(4),
+  },
+  bankruptcyList: { display: "flex", flexDirection: "column", gap: s(2) },
+  bankruptcyLine: { color: "#f0a0a0", fontSize: ts(12) },
+  historyBox: {
+    background: "rgba(0,0,0,0.25)", border: "1px solid rgba(201,169,97,0.18)",
+    borderRadius: s(8), padding: `${s(4)}px ${s(10)}px`, marginBottom: s(12),
+    maxHeight: s(180), overflowY: "auto",
+  },
+  historyRow: {
+    display: "flex", gap: s(8), padding: `${s(3)}px 0`,
+    borderTop: "1px dashed rgba(201,169,97,0.08)", fontSize: ts(11),
+    alignItems: "baseline",
+  },
+  historyRound: {
+    color: gold, fontFamily: "monospace", minWidth: s(28), fontSize: ts(11),
+    fontWeight: "bold",
+  },
+  historyEntry: { color: "#d4c9a8", flex: 1 },
+  historyName: { color: gold, fontWeight: "bold" },
+  historyGain: { color: "#7dd498", fontFamily: "monospace", fontWeight: "bold" },
 
   // Help overlay
   helpPanel: {
