@@ -2560,154 +2560,156 @@ function MahjongGame() {
               ))}
             </div>
 
-            {roundOverTab === "winner" && (
-              state.winner !== null ? (
-                (() => {
-                  const winner = state.players[state.winner];
-                  const is7p = winner.openMelds.length === 0 && isSevenPairs(winner.hand);
-                  return (
-                  <>
-                  <h2 style={S.winTitle}>
-                    {state.winner === PLAYER_IDX ? L.youWin : L.otherWins(SL[state.winner])}
-                  </h2>
-                  {is7p && <p style={{ color: "#c9a961", fontSize: 14, letterSpacing: 2, marginBottom: 8, textTransform: "uppercase" }}>{L.sevenPairs}</p>}
-                  {state.winInfo && (
-                    <p style={S.winTypeBadge}>
-                      {state.winInfo.type === "zimo" ? L.winTypeZimo : L.winTypeDianpao}
-                      {" · "}
-                      {state.winInfo.largeHu ? L.largeHu : L.smallHu}
-                    </p>
-                  )}
-                  <div style={S.winningHand}>
-                    <p style={S.winHandLabel}>{L.winHand}</p>
-                    <div style={S.winTilesRow}>
-                      {(() => {
-                        const winId = state.winInfo && state.winInfo.winningTile ? state.winInfo.winningTile.id : null;
-                        const tileStyle = (t) =>
-                          winId && t.id === winId ? { ...S.winTile, ...S.winTileHighlight } : S.winTile;
-                        return is7p ? (
-                          (() => {
-                            const pairs = [];
-                            const used = new Set();
-                            for (const t of winner.hand) {
-                              if (used.has(t.id)) continue;
-                              const match = winner.hand.find((x) => x.id !== t.id && !used.has(x.id) && tileKey(x) === tileKey(t));
-                              if (match) {
-                                pairs.push([t, match]);
-                                used.add(t.id);
-                                used.add(match.id);
+            <div style={S.tabPanes}>
+              <div style={{ ...S.tabPane, ...(roundOverTab !== "winner" ? S.tabPaneHidden : {}) }} aria-hidden={roundOverTab !== "winner"}>
+                {state.winner !== null ? (
+                  (() => {
+                    const winner = state.players[state.winner];
+                    const is7p = winner.openMelds.length === 0 && isSevenPairs(winner.hand);
+                    return (
+                    <>
+                    <h2 style={S.winTitle}>
+                      {state.winner === PLAYER_IDX ? L.youWin : L.otherWins(SL[state.winner])}
+                    </h2>
+                    {is7p && <p style={{ color: "#c9a961", fontSize: 14, letterSpacing: 2, marginBottom: 8, textTransform: "uppercase" }}>{L.sevenPairs}</p>}
+                    {state.winInfo && (
+                      <p style={S.winTypeBadge}>
+                        {state.winInfo.type === "zimo" ? L.winTypeZimo : L.winTypeDianpao}
+                        {" · "}
+                        {state.winInfo.largeHu ? L.largeHu : L.smallHu}
+                      </p>
+                    )}
+                    <div style={S.winningHand}>
+                      <p style={S.winHandLabel}>{L.winHand}</p>
+                      <div style={S.winTilesRow}>
+                        {(() => {
+                          const winId = state.winInfo && state.winInfo.winningTile ? state.winInfo.winningTile.id : null;
+                          const tileStyle = (t) =>
+                            winId && t.id === winId ? { ...S.winTile, ...S.winTileHighlight } : S.winTile;
+                          return is7p ? (
+                            (() => {
+                              const pairs = [];
+                              const used = new Set();
+                              for (const t of winner.hand) {
+                                if (used.has(t.id)) continue;
+                                const match = winner.hand.find((x) => x.id !== t.id && !used.has(x.id) && tileKey(x) === tileKey(t));
+                                if (match) {
+                                  pairs.push([t, match]);
+                                  used.add(t.id);
+                                  used.add(match.id);
+                                }
                               }
-                            }
-                            return pairs.map((pair, pi) => (
-                              <div key={pi} style={S.winMeldGroup}>
-                                {pair.map((t, ti) => (
-                                  <span key={ti} style={tileStyle(t)}>{tileSymbol(t)}</span>
-                                ))}
-                              </div>
-                            ));
-                          })()
-                        ) : (
-                          <>
-                            {winner.openMelds.map((m, mi) => (
-                              <div key={`m${mi}`} style={S.winMeldGroup}>
-                                {m.tiles.map((t, ti) => (
-                                  <span key={ti} style={tileStyle(t)}>{tileSymbol(t)}</span>
-                                ))}
-                              </div>
-                            ))}
-                            <div style={S.winMeldGroup}>
-                              {winner.hand.map((t, ti) => (
-                                <span key={ti} style={tileStyle(t)}>{tileSymbol(t)}</span>
+                              return pairs.map((pair, pi) => (
+                                <div key={pi} style={S.winMeldGroup}>
+                                  {pair.map((t, ti) => (
+                                    <span key={ti} style={tileStyle(t)}>{tileSymbol(t)}</span>
+                                  ))}
+                                </div>
+                              ));
+                            })()
+                          ) : (
+                            <>
+                              {winner.openMelds.map((m, mi) => (
+                                <div key={`m${mi}`} style={S.winMeldGroup}>
+                                  {m.tiles.map((t, ti) => (
+                                    <span key={ti} style={tileStyle(t)}>{tileSymbol(t)}</span>
+                                  ))}
+                                </div>
                               ))}
-                            </div>
-                          </>
-                        );
-                      })()}
+                              <div style={S.winMeldGroup}>
+                                {winner.hand.map((t, ti) => (
+                                  <span key={ti} style={tileStyle(t)}>{tileSymbol(t)}</span>
+                                ))}
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+                      {state.winInfo && state.winInfo.winningTile && (
+                        <p style={S.winningTileLabel}>{L.winningTile}: {TN(state.winInfo.winningTile)}</p>
+                      )}
                     </div>
-                    {state.winInfo && state.winInfo.winningTile && (
-                      <p style={S.winningTileLabel}>{L.winningTile}: {TN(state.winInfo.winningTile)}</p>
+                    </>
+                    );
+                  })()
+                ) : (
+                  <h2 style={S.winTitle}>{L.drawExhausted}</h2>
+                )}
+              </div>
+
+              <div style={{ ...S.tabPane, ...(roundOverTab !== "scoring" ? S.tabPaneHidden : {}) }} aria-hidden={roundOverTab !== "scoring"}>
+                {state.scoreBreakdown ? (
+                  <div style={S.breakdownBox}>
+                    <p style={S.breakdownTitle}>{L.breakdownTitle}</p>
+                    <p style={S.breakdownBase}>
+                      {L.baseLabel}: {state.scoreBreakdown.base}
+                    </p>
+                    {state.players.map((_, i) => {
+                      const delta = state.scoreBreakdown.deltas[i];
+                      const isWinner = i === state.winner;
+                      const mods = [];
+                      if (!isWinner) {
+                        if (!state.players[i].openMelds.some((m) => m.claimed)) mods.push(L.modNoOpen);
+                        if (state.winInfo.type === "dianpao" && state.winInfo.discarder === i) mods.push(L.modDianpao);
+                        if (state.winInfo.type === "zimo") mods.push(L.modZimo);
+                        if (state.winInfo.sevenPairs) mods.push(L.modSevenPairs);
+                      }
+                      return (
+                        <div key={i} style={S.breakdownRow}>
+                          <span style={S.breakdownName}>{SL[i]}</span>
+                          <span style={S.breakdownMods}>
+                            {isWinner
+                              ? L.winnerGains(delta)
+                              : (mods.length > 0
+                                  ? `${mods.join(" + ")} ${L.loserLoses(state.scoreBreakdown.mults[i], -delta)}`
+                                  : `${L.loserLoses(state.scoreBreakdown.mults[i], -delta)}`)}
+                          </span>
+                          <span style={isWinner ? S.breakdownDeltaPos : S.breakdownDeltaNeg}>
+                            {delta > 0 ? `+${delta}` : delta}
+                          </span>
+                          <span style={S.breakdownTotal}>= {state.scores[i]}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p style={S.breakdownBase}>{L.scoringNoExchange}</p>
+                )}
+              </div>
+
+              <div style={{ ...S.tabPane, ...(roundOverTab !== "stats" ? S.tabPaneHidden : {}) }} aria-hidden={roundOverTab !== "stats"}>
+                <div style={S.statsView}>
+                  <p style={S.statsHeader}>
+                    {L.roundHeader(state.roundNumber, state.totalRounds, L.windDisplay(state.roundWind), SL[state.dealer])}
+                  </p>
+                  <div style={S.statsKvBox}>
+                    <div style={S.statsKvRow}>
+                      <span style={S.statsKvLabel}>{L.wallRemainingLabel}</span>
+                      <span style={S.statsKvValue}>{state.wall.length}</span>
+                    </div>
+                    {state.winner !== null && state.personalities && state.personalities[state.winner] && difficulty !== "easy" && (
+                      <div style={S.statsKvRow}>
+                        <span style={S.statsKvLabel}>{L.winnerPersonality}</span>
+                        <span style={S.statsKvValue}>{personalityLabel(state.personalities[state.winner])}</span>
+                      </div>
                     )}
                   </div>
-                  </>
-                  );
-                })()
-              ) : (
-                <h2 style={S.winTitle}>{L.drawExhausted}</h2>
-              )
-            )}
-
-            {roundOverTab === "scoring" && (
-              state.scoreBreakdown ? (
-                <div style={S.breakdownBox}>
-                  <p style={S.breakdownTitle}>{L.breakdownTitle}</p>
-                  <p style={S.breakdownBase}>
-                    {L.baseLabel}: {state.scoreBreakdown.base}
-                  </p>
-                  {state.players.map((_, i) => {
-                    const delta = state.scoreBreakdown.deltas[i];
-                    const isWinner = i === state.winner;
-                    const mods = [];
-                    if (!isWinner) {
-                      if (!state.players[i].openMelds.some((m) => m.claimed)) mods.push(L.modNoOpen);
-                      if (state.winInfo.type === "dianpao" && state.winInfo.discarder === i) mods.push(L.modDianpao);
-                      if (state.winInfo.type === "zimo") mods.push(L.modZimo);
-                      if (state.winInfo.sevenPairs) mods.push(L.modSevenPairs);
-                    }
-                    return (
-                      <div key={i} style={S.breakdownRow}>
-                        <span style={S.breakdownName}>{SL[i]}</span>
-                        <span style={S.breakdownMods}>
-                          {isWinner
-                            ? L.winnerGains(delta)
-                            : (mods.length > 0
-                                ? `${mods.join(" + ")} ${L.loserLoses(state.scoreBreakdown.mults[i], -delta)}`
-                                : `${L.loserLoses(state.scoreBreakdown.mults[i], -delta)}`)}
-                        </span>
-                        <span style={isWinner ? S.breakdownDeltaPos : S.breakdownDeltaNeg}>
-                          {delta > 0 ? `+${delta}` : delta}
-                        </span>
-                        <span style={S.breakdownTotal}>= {state.scores[i]}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p style={S.breakdownBase}>{L.scoringNoExchange}</p>
-              )
-            )}
-
-            {roundOverTab === "stats" && (
-              <div style={S.statsView}>
-                <p style={S.statsHeader}>
-                  {L.roundHeader(state.roundNumber, state.totalRounds, L.windDisplay(state.roundWind), SL[state.dealer])}
-                </p>
-                <div style={S.statsKvBox}>
-                  <div style={S.statsKvRow}>
-                    <span style={S.statsKvLabel}>{L.wallRemainingLabel}</span>
-                    <span style={S.statsKvValue}>{state.wall.length}</span>
+                  <p style={S.statsSubtitle}>{L.standingsNow}</p>
+                  <div style={S.standingsBox}>
+                    {state.players
+                      .map((_, i) => ({ idx: i, score: state.scores[i] }))
+                      .sort((a, b) => b.score - a.score)
+                      .map((entry, rank) => (
+                        <div key={entry.idx} style={rank === 0 ? S.standingsRowWinner : S.standingsRow}>
+                          <span style={S.standingsRank}>{rank + 1}{L.rankSuffix(rank + 1)}</span>
+                          <span style={S.standingsName}>{SL[entry.idx]}</span>
+                          <span style={{ ...S.standingsScore, ...(entry.score < 0 ? { color: "#f0a0a0" } : {}) }}>{entry.score}</span>
+                        </div>
+                      ))}
                   </div>
-                  {state.winner !== null && state.personalities && state.personalities[state.winner] && difficulty !== "easy" && (
-                    <div style={S.statsKvRow}>
-                      <span style={S.statsKvLabel}>{L.winnerPersonality}</span>
-                      <span style={S.statsKvValue}>{personalityLabel(state.personalities[state.winner])}</span>
-                    </div>
-                  )}
-                </div>
-                <p style={S.statsSubtitle}>{L.standingsNow}</p>
-                <div style={S.standingsBox}>
-                  {state.players
-                    .map((_, i) => ({ idx: i, score: state.scores[i] }))
-                    .sort((a, b) => b.score - a.score)
-                    .map((entry, rank) => (
-                      <div key={entry.idx} style={rank === 0 ? S.standingsRowWinner : S.standingsRow}>
-                        <span style={S.standingsRank}>{rank + 1}{L.rankSuffix(rank + 1)}</span>
-                        <span style={S.standingsName}>{SL[entry.idx]}</span>
-                        <span style={{ ...S.standingsScore, ...(entry.score < 0 ? { color: "#f0a0a0" } : {}) }}>{entry.score}</span>
-                      </div>
-                    ))}
                 </div>
               </div>
-            )}
+            </div>
 
             <div style={S.roundOverActions}>
               {gameOver ? (
@@ -3247,6 +3249,11 @@ function makeStyles(vw, vh) {
     display: "flex", borderBottom: `2px solid rgba(201,169,97,0.18)`,
     marginBottom: s(14), gap: 0,
   },
+  // Grid-stack: all panes share the same cell so the container sizes to the
+  // tallest pane and the modal stops resizing as you switch tabs.
+  tabPanes: { display: "grid" },
+  tabPane: { gridColumn: 1, gridRow: 1, minWidth: 0 },
+  tabPaneHidden: { visibility: "hidden", pointerEvents: "none" },
   tabBtn: {
     flex: 1, background: "transparent", border: "none",
     color: greenDim, padding: `${s(8)}px ${s(8)}px`,
