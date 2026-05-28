@@ -133,6 +133,14 @@ const LANG = {
     adminPhaseDraw: "Draw",
     adminPhaseDiscard: "Discard",
     adminPhaseClaim: "Claim",
+    // AI names list
+    manageNamesBtn: "Manage Names",
+    manageNamesTitle: "AI Player Names",
+    namesHint: "Three names are picked at random at the start of each game. List is saved to your browser.",
+    addNamePlaceholder: "Add a name",
+    addNameBtn: "+ Add",
+    resetNamesBtn: "Reset to defaults",
+    namesEmpty: "No names yet — add some or reset to defaults.",
   },
   zh: {
     tileName: (t) => {
@@ -256,5 +264,12 @@ const LANG = {
     adminPhaseDraw: "摸牌",
     adminPhaseDiscard: "打牌",
     adminPhaseClaim: "鸣牌",
+    manageNamesBtn: "管理名字",
+    manageNamesTitle: "电脑玩家名字",
+    namesHint: "每局开始时随机选三个名字。列表保存在浏览器中。",
+    addNamePlaceholder: "添加名字",
+    addNameBtn: "+ 添加",
+    resetNamesBtn: "恢复默认",
+    namesEmpty: "暂无名字 — 请添加或恢复默认。",
   },
 };

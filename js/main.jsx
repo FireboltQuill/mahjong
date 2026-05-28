@@ -17,6 +17,9 @@ function MahjongGame() {
   const [showHelp, setShowHelp] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const [adminInput, setAdminInput] = useState(null);
+  const [showNames, setShowNames] = useState(false);
+  const [aiNamesList, setAiNamesList] = useState(() => loadAiNames());
+  const [newNameInput, setNewNameInput] = useState("");
   const [roundOverTab, setRoundOverTab] = useState("winner"); // "winner" | "scoring" | "stats"
   const [gameOverTab, setGameOverTab] = useState("standings"); // "standings" | "stats"
   const [gameOverAcknowledged, setGameOverAcknowledged] = useState(false);
@@ -31,11 +34,22 @@ function MahjongGame() {
   // Localization helpers
   const L = LANG[lang];
   const TN = (t) => L.tileName(t);
-  const SL = L.seats;
+  // SL is the per-seat display name: "You" for seat 0, the randomly-assigned
+  // AI name for seats 1–3 (with the seatsShort label as a fallback when no
+  // name has been picked yet).
+  const namesRef = useRef(state.aiNames);
+  namesRef.current = state.aiNames;
+  const SL = useMemo(() => {
+    const names = state.aiNames || [null, null, null, null];
+    return L.seatsShort.map((short, i) => (i === 0 ? short : (names[i] || short)));
+  }, [L, state.aiNames]);
   // For game logic (called inside setState where `lang` state may be stale)
   const _L = () => LANG[langRef.current];
   const _TN = (t) => _L().tileName(t);
-  const _SL = () => _L().seats;
+  const _SL = () => {
+    const names = namesRef.current || [null, null, null, null];
+    return _L().seatsShort.map((short, i) => (i === 0 ? short : (names[i] || short)));
+  };
 
   const addLog = useCallback((msg) => {
     setState((prev) => ({ ...prev, log: [...prev.log.slice(-50), msg] }));
@@ -509,6 +523,30 @@ function MahjongGame() {
     setGameOverAcknowledged(false);
   }
 
+  // AI name list: add, remove, reset. Mutations also persist to localStorage.
+  function addAiName() {
+    const trimmed = newNameInput.trim();
+    if (!trimmed) return;
+    if (aiNamesList.includes(trimmed)) {
+      setNewNameInput("");
+      return;
+    }
+    const next = [...aiNamesList, trimmed];
+    setAiNamesList(next);
+    saveAiNames(next);
+    setNewNameInput("");
+  }
+  function removeAiName(name) {
+    const next = aiNamesList.filter((n) => n !== name);
+    setAiNamesList(next);
+    saveAiNames(next);
+  }
+  function resetAiNames() {
+    const next = [...DEFAULT_AI_NAMES];
+    setAiNamesList(next);
+    saveAiNames(next);
+  }
+
   // Admin console: populate form from a state snapshot and open the modal.
   function openAdmin(snapshot) {
     const src = snapshot || state;
@@ -694,6 +732,50 @@ function MahjongGame() {
         <span style={{ fontSize: topFs, lineHeight: 1.1 }}>{d.top}</span>
         {d.bot && <span style={{ fontSize: botFs, lineHeight: 1, marginTop: -1 }}>{d.bot}</span>}
       </span>
+    );
+  }
+
+  // ============================================================
+  // MANAGE NAMES OVERLAY
+  // ============================================================
+  function renderNamesOverlay() {
+    return (
+      <div style={S.overlay} onClick={() => setShowNames(false)}>
+        <div style={S.namesPanel} onClick={(e) => e.stopPropagation()}>
+          <div style={S.adminHeader}>
+            <h2 style={S.adminTitle}>{L.manageNamesTitle}</h2>
+            <button tabIndex={-1} style={S.menuBtn} onClick={() => setShowNames(false)}>{L.helpClose}</button>
+          </div>
+          <div style={S.namesScroll}>
+            <p style={S.adminLegend}>{L.namesHint}</p>
+            <div style={S.namesInputRow}>
+              <input
+                style={S.namesInput}
+                placeholder={L.addNamePlaceholder}
+                value={newNameInput}
+                onChange={(e) => setNewNameInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") addAiName(); }}
+              />
+              <button tabIndex={-1} style={S.langBtn} onClick={addAiName}>{L.addNameBtn}</button>
+            </div>
+            {aiNamesList.length === 0 ? (
+              <p style={S.adminLegend}>{L.namesEmpty}</p>
+            ) : (
+              <div style={S.namesList}>
+                {aiNamesList.map((n) => (
+                  <div key={n} style={S.namesRow}>
+                    <span style={S.namesRowText}>{n}</span>
+                    <button tabIndex={-1} style={S.namesRemoveBtn} onClick={() => removeAiName(n)}>×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div style={S.adminFooter}>
+            <button tabIndex={-1} style={S.langBtn} onClick={resetAiNames}>{L.resetNamesBtn}</button>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -946,6 +1028,7 @@ function MahjongGame() {
             </div>
             <div style={S.menuHelpRow}>
               <button tabIndex={-1} style={S.langBtn} onClick={() => setShowHelp(true)}>{L.howToPlay}</button>
+              <button tabIndex={-1} style={S.langBtn} onClick={() => setShowNames(true)}>{L.manageNamesBtn}</button>
               <button tabIndex={-1} style={S.langBtn} onClick={startWithAdmin}>{L.adminMenuBtn}</button>
             </div>
           </div>
@@ -962,6 +1045,7 @@ function MahjongGame() {
       </div>
       {showHelp && renderHelpOverlay()}
       {showAdmin && renderAdminOverlay()}
+      {showNames && renderNamesOverlay()}
       </>
     );
   }
@@ -1031,7 +1115,7 @@ function MahjongGame() {
                 </div>
                 <div style={S.discardTableLayout}>
                   <div style={S.discardPositionTop}>
-                    <div style={S.discardPlayerLabel}>{L.seatsShort[2]}</div>
+                    <div style={S.discardPlayerLabel}>{SL[2]}</div>
                     <div style={S.discardTilesWrap}>
                       {state.players[2].discards.length === 0 && <span style={S.discardEmpty}>—</span>}
                       {state.players[2].discards.map((t, i) => {
@@ -1041,7 +1125,7 @@ function MahjongGame() {
                     </div>
                   </div>
                   <div style={S.discardPositionSide}>
-                    <div style={S.discardPlayerLabel}>{L.seatsShort[3]}</div>
+                    <div style={S.discardPlayerLabel}>{SL[3]}</div>
                     <div style={S.discardTilesWrap}>
                       {state.players[3].discards.length === 0 && <span style={S.discardEmpty}>—</span>}
                       {state.players[3].discards.map((t, i) => {
@@ -1051,7 +1135,7 @@ function MahjongGame() {
                     </div>
                   </div>
                   <div style={S.discardPositionSide}>
-                    <div style={S.discardPlayerLabel}>{L.seatsShort[1]}</div>
+                    <div style={S.discardPlayerLabel}>{SL[1]}</div>
                     <div style={S.discardTilesWrap}>
                       {state.players[1].discards.length === 0 && <span style={S.discardEmpty}>—</span>}
                       {state.players[1].discards.map((t, i) => {
@@ -1061,7 +1145,7 @@ function MahjongGame() {
                     </div>
                   </div>
                   <div style={S.discardPositionBottom}>
-                    <div style={S.discardPlayerLabel}>{L.seatsShort[0]}</div>
+                    <div style={S.discardPlayerLabel}>{SL[0]}</div>
                     <div style={S.discardTilesWrap}>
                       {state.players[0].discards.length === 0 && <span style={S.discardEmpty}>—</span>}
                       {state.players[0].discards.map((t, i) => {
@@ -1539,6 +1623,7 @@ function MahjongGame() {
     </div>
     {showHelp && renderHelpOverlay()}
     {showAdmin && renderAdminOverlay()}
+    {showNames && renderNamesOverlay()}
     </>
   );
 }

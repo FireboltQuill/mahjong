@@ -607,5 +607,40 @@ function makeStyles(vw, vh) {
     display: "flex", justifyContent: "flex-end", gap: s(10),
     padding: `${s(12)}px ${s(20)}px`, borderTop: `1px solid rgba(201,169,97,0.2)`, flexShrink: 0,
   },
+
+  // ---- MANAGE NAMES ----
+  namesPanel: {
+    background: `linear-gradient(145deg, ${bgLight}, ${bg})`, border: `2px solid ${gold}`,
+    borderRadius: s(14), padding: 0, maxWidth: s(420), width: "92%", maxHeight: "85vh",
+    boxShadow: "0 24px 80px rgba(0,0,0,0.6)", display: "flex", flexDirection: "column",
+  },
+  namesScroll: {
+    overflowY: "auto", padding: `${s(14)}px ${s(20)}px`, flex: 1,
+  },
+  namesInputRow: {
+    display: "flex", gap: s(8), marginTop: s(10), marginBottom: s(12),
+  },
+  namesInput: {
+    flex: 1, background: "rgba(0,0,0,0.35)",
+    border: `1px solid rgba(201,169,97,0.3)`, color: "#d4c9a8",
+    padding: `${s(6)}px ${s(10)}px`, borderRadius: s(6),
+    fontSize: ts(13), outline: "none",
+  },
+  namesList: {
+    display: "flex", flexDirection: "column", gap: s(4),
+    background: "rgba(0,0,0,0.25)", border: "1px solid rgba(201,169,97,0.18)",
+    borderRadius: s(8), padding: `${s(6)}px ${s(10)}px`,
+  },
+  namesRow: {
+    display: "flex", justifyContent: "space-between", alignItems: "center",
+    padding: `${s(4)}px ${s(2)}px`, fontSize: ts(13),
+    borderBottom: "1px dashed rgba(201,169,97,0.08)",
+  },
+  namesRowText: { color: "#d4c9a8" },
+  namesRemoveBtn: {
+    background: "rgba(180,80,80,0.18)", border: "1px solid rgba(220,120,120,0.35)",
+    color: "#f0a0a0", borderRadius: s(4), padding: `${s(0)}px ${s(8)}px`,
+    cursor: "pointer", outline: "none", fontSize: ts(14), lineHeight: 1.2,
+  },
   };
 }
