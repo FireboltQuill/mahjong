@@ -9,11 +9,10 @@ function createInitialState(windRounds = 1, lang = "en") {
   const personalities = assignPersonalities();
   const totalRounds = windRounds * 4;
   const startingScore = totalRounds * STARTING_PER_ROUND;
-  // Seat 0 is always the human; seats 1–3 get random names from the
-  // user-managed pool. aiNames stays fixed for the whole match so an AI
-  // player keeps their name as the dealer rotates.
-  const picked = pickRandomNames(loadAiNames(), 3);
-  const aiNames = [null, picked[0], picked[1], picked[2]];
+  // Pick a random name group, then four distinct names from it (one for the
+  // human at seat 0, three for the AIs at seats 1–3). Names stay fixed for
+  // the whole match so a player keeps their name as the dealer rotates.
+  const { groupName, names } = pickPlayerNames(loadNameGroups(), 4);
   return initRound({
     dealer: 0,
     roundWind: "east",
@@ -23,7 +22,8 @@ function createInitialState(windRounds = 1, lang = "en") {
     scores: [startingScore, startingScore, startingScore, startingScore],
     roundResults: [],
     personalities,
-    aiNames,
+    playerNames: names,
+    nameGroup: groupName,
   }, lang);
 }
 

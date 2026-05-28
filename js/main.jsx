@@ -17,9 +17,11 @@ function MahjongGame() {
   const [showHelp, setShowHelp] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const [adminInput, setAdminInput] = useState(null);
+  const [adminTab, setAdminTab] = useState("state"); // "state" | "names"
   const [showNames, setShowNames] = useState(false);
-  const [aiNamesList, setAiNamesList] = useState(() => loadAiNames());
-  const [newNameInput, setNewNameInput] = useState("");
+  const [nameGroups, setNameGroups] = useState(() => loadNameGroups());
+  const [newNameInputs, setNewNameInputs] = useState({}); // per-group input buffer
+  const [newGroupInput, setNewGroupInput] = useState("");
   const [roundOverTab, setRoundOverTab] = useState("winner"); // "winner" | "scoring" | "stats"
   const [gameOverTab, setGameOverTab] = useState("standings"); // "standings" | "stats"
   const [gameOverAcknowledged, setGameOverAcknowledged] = useState(false);
@@ -34,21 +36,22 @@ function MahjongGame() {
   // Localization helpers
   const L = LANG[lang];
   const TN = (t) => L.tileName(t);
-  // SL is the per-seat display name: "You" for seat 0, the randomly-assigned
-  // AI name for seats 1–3 (with the seatsShort label as a fallback when no
-  // name has been picked yet).
-  const namesRef = useRef(state.aiNames);
-  namesRef.current = state.aiNames;
+  // SL is the per-seat display name. Every seat (human + 3 AIs) gets a name
+  // from the chosen group at game start; we fall back to the localized
+  // seatsShort label when state.playerNames is missing (e.g. before first
+  // game).
+  const namesRef = useRef(state.playerNames);
+  namesRef.current = state.playerNames;
   const SL = useMemo(() => {
-    const names = state.aiNames || [null, null, null, null];
-    return L.seatsShort.map((short, i) => (i === 0 ? short : (names[i] || short)));
-  }, [L, state.aiNames]);
+    const names = state.playerNames || [];
+    return L.seatsShort.map((short, i) => names[i] || short);
+  }, [L, state.playerNames]);
   // For game logic (called inside setState where `lang` state may be stale)
   const _L = () => LANG[langRef.current];
   const _TN = (t) => _L().tileName(t);
   const _SL = () => {
-    const names = namesRef.current || [null, null, null, null];
-    return _L().seatsShort.map((short, i) => (i === 0 ? short : (names[i] || short)));
+    const names = namesRef.current || [];
+    return _L().seatsShort.map((short, i) => names[i] || short);
   };
 
   const addLog = useCallback((msg) => {
@@ -523,28 +526,46 @@ function MahjongGame() {
     setGameOverAcknowledged(false);
   }
 
-  // AI name list: add, remove, reset. Mutations also persist to localStorage.
-  function addAiName() {
-    const trimmed = newNameInput.trim();
+  // Name group editor: mutations also persist to localStorage.
+  function persistGroups(next) {
+    setNameGroups(next);
+    saveNameGroups(next);
+  }
+  function addNameToGroup(groupIdx) {
+    const trimmed = (newNameInputs[groupIdx] || "").trim();
     if (!trimmed) return;
-    if (aiNamesList.includes(trimmed)) {
-      setNewNameInput("");
+    const g = nameGroups[groupIdx];
+    if (!g || g.names.includes(trimmed)) {
+      setNewNameInputs((s) => ({ ...s, [groupIdx]: "" }));
       return;
     }
-    const next = [...aiNamesList, trimmed];
-    setAiNamesList(next);
-    saveAiNames(next);
-    setNewNameInput("");
+    const next = nameGroups.map((grp, i) =>
+      i === groupIdx ? { ...grp, names: [...grp.names, trimmed] } : grp
+    );
+    persistGroups(next);
+    setNewNameInputs((s) => ({ ...s, [groupIdx]: "" }));
   }
-  function removeAiName(name) {
-    const next = aiNamesList.filter((n) => n !== name);
-    setAiNamesList(next);
-    saveAiNames(next);
+  function removeNameFromGroup(groupIdx, name) {
+    const next = nameGroups.map((g, i) =>
+      i === groupIdx ? { ...g, names: g.names.filter((n) => n !== name) } : g
+    );
+    persistGroups(next);
   }
-  function resetAiNames() {
-    const next = [...DEFAULT_AI_NAMES];
-    setAiNamesList(next);
-    saveAiNames(next);
+  function addGroup() {
+    const trimmed = newGroupInput.trim();
+    if (!trimmed) return;
+    if (nameGroups.some((g) => g.name === trimmed)) {
+      setNewGroupInput("");
+      return;
+    }
+    persistGroups([...nameGroups, { name: trimmed, names: [] }]);
+    setNewGroupInput("");
+  }
+  function removeGroup(groupIdx) {
+    persistGroups(nameGroups.filter((_, i) => i !== groupIdx));
+  }
+  function resetNameGroups() {
+    persistGroups(DEFAULT_NAME_GROUPS.map((g) => ({ name: g.name, names: [...g.names] })));
   }
 
   // Admin console: populate form from a state snapshot and open the modal.
@@ -561,6 +582,7 @@ function MahjongGame() {
         score: String(src.scores[i]),
       })),
     });
+    setAdminTab("state");
     setShowAdmin(true);
   }
   function closeAdmin() {
@@ -736,6 +758,61 @@ function MahjongGame() {
   }
 
   // ============================================================
+  // NAME GROUPS EDITOR (shared between the menu overlay and admin tab)
+  // ============================================================
+  function renderGroupsEditor() {
+    return (
+      <>
+        <p style={S.adminLegend}>{L.namesHint}</p>
+        <div style={S.namesInputRow}>
+          <input
+            style={S.namesInput}
+            placeholder={L.addGroupPlaceholder}
+            value={newGroupInput}
+            onChange={(e) => setNewGroupInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") addGroup(); }}
+          />
+          <button tabIndex={-1} style={S.langBtn} onClick={addGroup}>{L.addGroupBtn}</button>
+        </div>
+        {nameGroups.length === 0 ? (
+          <p style={S.adminLegend}>{L.namesEmpty}</p>
+        ) : (
+          nameGroups.map((g, gi) => (
+            <div key={`${g.name}-${gi}`} style={S.namesGroupBox}>
+              <div style={S.namesGroupHeader}>
+                <span style={S.namesGroupTitle}>{g.name}</span>
+                <button tabIndex={-1} style={S.namesRemoveBtn} onClick={() => removeGroup(gi)}>×</button>
+              </div>
+              {g.names.length === 0 ? (
+                <p style={S.adminLegend}>{L.groupEmpty}</p>
+              ) : (
+                <div style={S.namesList}>
+                  {g.names.map((n) => (
+                    <div key={n} style={S.namesRow}>
+                      <span style={S.namesRowText}>{n}</span>
+                      <button tabIndex={-1} style={S.namesRemoveBtn} onClick={() => removeNameFromGroup(gi, n)}>×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={S.namesInputRow}>
+                <input
+                  style={S.namesInput}
+                  placeholder={L.addNamePlaceholder}
+                  value={newNameInputs[gi] || ""}
+                  onChange={(e) => setNewNameInputs((s) => ({ ...s, [gi]: e.target.value }))}
+                  onKeyDown={(e) => { if (e.key === "Enter") addNameToGroup(gi); }}
+                />
+                <button tabIndex={-1} style={S.langBtn} onClick={() => addNameToGroup(gi)}>{L.addNameBtn}</button>
+              </div>
+            </div>
+          ))
+        )}
+      </>
+    );
+  }
+
+  // ============================================================
   // MANAGE NAMES OVERLAY
   // ============================================================
   function renderNamesOverlay() {
@@ -747,32 +824,10 @@ function MahjongGame() {
             <button tabIndex={-1} style={S.menuBtn} onClick={() => setShowNames(false)}>{L.helpClose}</button>
           </div>
           <div style={S.namesScroll}>
-            <p style={S.adminLegend}>{L.namesHint}</p>
-            <div style={S.namesInputRow}>
-              <input
-                style={S.namesInput}
-                placeholder={L.addNamePlaceholder}
-                value={newNameInput}
-                onChange={(e) => setNewNameInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") addAiName(); }}
-              />
-              <button tabIndex={-1} style={S.langBtn} onClick={addAiName}>{L.addNameBtn}</button>
-            </div>
-            {aiNamesList.length === 0 ? (
-              <p style={S.adminLegend}>{L.namesEmpty}</p>
-            ) : (
-              <div style={S.namesList}>
-                {aiNamesList.map((n) => (
-                  <div key={n} style={S.namesRow}>
-                    <span style={S.namesRowText}>{n}</span>
-                    <button tabIndex={-1} style={S.namesRemoveBtn} onClick={() => removeAiName(n)}>×</button>
-                  </div>
-                ))}
-              </div>
-            )}
+            {renderGroupsEditor()}
           </div>
           <div style={S.adminFooter}>
-            <button tabIndex={-1} style={S.langBtn} onClick={resetAiNames}>{L.resetNamesBtn}</button>
+            <button tabIndex={-1} style={S.langBtn} onClick={resetNameGroups}>{L.resetNamesBtn}</button>
           </div>
         </div>
       </div>
@@ -791,94 +846,123 @@ function MahjongGame() {
             <h2 style={S.adminTitle}>{L.adminTitle}</h2>
             <button tabIndex={-1} style={S.menuBtn} onClick={closeAdmin}>{L.adminClose}</button>
           </div>
+          <div style={S.tabBar}>
+            {[
+              ["state", L.adminTabState],
+              ["names", L.adminTabNames],
+            ].map(([id, label]) => (
+              <button
+                key={id}
+                tabIndex={-1}
+                style={{ ...S.tabBtn, ...(adminTab === id ? S.tabBtnActive : {}) }}
+                onClick={() => setAdminTab(id)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <div style={S.adminScroll}>
-            <p style={S.adminLegend}>{L.adminLegend}</p>
-            <p style={S.adminLegend}>{L.adminMeldExample}</p>
+            {adminTab === "state" && (
+              <>
+                <p style={S.adminLegend}>{L.adminLegend}</p>
+                <p style={S.adminLegend}>{L.adminMeldExample}</p>
 
-            <div style={S.adminTopRow}>
-              <label style={S.adminInlineLabel}>
-                {L.adminTurn}:
-                <select
-                  style={S.adminSelect}
-                  value={adminInput.turn}
-                  onChange={(e) => updateAdmin({ turn: parseInt(e.target.value, 10) })}
-                >
-                  {[0, 1, 2, 3].map((i) => (
-                    <option key={i} value={i}>{SL[i]}</option>
-                  ))}
-                </select>
-              </label>
-              <label style={S.adminInlineLabel}>
-                {L.adminPhase}:
-                <select
-                  style={S.adminSelect}
-                  value={adminInput.phase}
-                  onChange={(e) => updateAdmin({ phase: e.target.value })}
-                >
-                  <option value="draw">{L.adminPhaseDraw}</option>
-                  <option value="discard">{L.adminPhaseDiscard}</option>
-                  <option value="claim">{L.adminPhaseClaim}</option>
-                </select>
-              </label>
-            </div>
-
-            <div style={S.adminField}>
-              <label style={S.adminLabel}>{L.adminWall}</label>
-              <textarea
-                style={S.adminTextarea}
-                value={adminInput.wall}
-                onChange={(e) => updateAdmin({ wall: e.target.value })}
-                rows={2}
-              />
-            </div>
-
-            {adminInput.players.map((p, i) => (
-              <div key={i} style={S.adminPlayerBox}>
-                <div style={S.adminPlayerHeader}>
-                  <span style={S.adminPlayerName}>{SL[i]}</span>
+                <div style={S.adminTopRow}>
                   <label style={S.adminInlineLabel}>
-                    {L.adminScore}:
-                    <input
-                      style={S.adminScoreInput}
-                      type="number"
-                      value={p.score}
-                      onChange={(e) => updateAdminPlayer(i, { score: e.target.value })}
-                    />
+                    {L.adminTurn}:
+                    <select
+                      style={S.adminSelect}
+                      value={adminInput.turn}
+                      onChange={(e) => updateAdmin({ turn: parseInt(e.target.value, 10) })}
+                    >
+                      {[0, 1, 2, 3].map((i) => (
+                        <option key={i} value={i}>{SL[i]}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label style={S.adminInlineLabel}>
+                    {L.adminPhase}:
+                    <select
+                      style={S.adminSelect}
+                      value={adminInput.phase}
+                      onChange={(e) => updateAdmin({ phase: e.target.value })}
+                    >
+                      <option value="draw">{L.adminPhaseDraw}</option>
+                      <option value="discard">{L.adminPhaseDiscard}</option>
+                      <option value="claim">{L.adminPhaseClaim}</option>
+                    </select>
                   </label>
                 </div>
+
                 <div style={S.adminField}>
-                  <label style={S.adminLabel}>{L.adminHand}</label>
+                  <label style={S.adminLabel}>{L.adminWall}</label>
                   <textarea
                     style={S.adminTextarea}
-                    value={p.hand}
-                    onChange={(e) => updateAdminPlayer(i, { hand: e.target.value })}
+                    value={adminInput.wall}
+                    onChange={(e) => updateAdmin({ wall: e.target.value })}
                     rows={2}
                   />
                 </div>
-                <div style={S.adminField}>
-                  <label style={S.adminLabel}>{L.adminMelds}</label>
-                  <textarea
-                    style={S.adminTextarea}
-                    value={p.melds}
-                    onChange={(e) => updateAdminPlayer(i, { melds: e.target.value })}
-                    rows={1}
-                  />
+
+                {adminInput.players.map((p, i) => (
+                  <div key={i} style={S.adminPlayerBox}>
+                    <div style={S.adminPlayerHeader}>
+                      <span style={S.adminPlayerName}>{SL[i]}</span>
+                      <label style={S.adminInlineLabel}>
+                        {L.adminScore}:
+                        <input
+                          style={S.adminScoreInput}
+                          type="number"
+                          value={p.score}
+                          onChange={(e) => updateAdminPlayer(i, { score: e.target.value })}
+                        />
+                      </label>
+                    </div>
+                    <div style={S.adminField}>
+                      <label style={S.adminLabel}>{L.adminHand}</label>
+                      <textarea
+                        style={S.adminTextarea}
+                        value={p.hand}
+                        onChange={(e) => updateAdminPlayer(i, { hand: e.target.value })}
+                        rows={2}
+                      />
+                    </div>
+                    <div style={S.adminField}>
+                      <label style={S.adminLabel}>{L.adminMelds}</label>
+                      <textarea
+                        style={S.adminTextarea}
+                        value={p.melds}
+                        onChange={(e) => updateAdminPlayer(i, { melds: e.target.value })}
+                        rows={1}
+                      />
+                    </div>
+                    <div style={S.adminField}>
+                      <label style={S.adminLabel}>{L.adminDiscards}</label>
+                      <textarea
+                        style={S.adminTextarea}
+                        value={p.discards}
+                        onChange={(e) => updateAdminPlayer(i, { discards: e.target.value })}
+                        rows={1}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+            {adminTab === "names" && (
+              <>
+                {renderGroupsEditor()}
+                <div style={{ marginTop: 12 }}>
+                  <button tabIndex={-1} style={S.langBtn} onClick={resetNameGroups}>{L.resetNamesBtn}</button>
                 </div>
-                <div style={S.adminField}>
-                  <label style={S.adminLabel}>{L.adminDiscards}</label>
-                  <textarea
-                    style={S.adminTextarea}
-                    value={p.discards}
-                    onChange={(e) => updateAdminPlayer(i, { discards: e.target.value })}
-                    rows={1}
-                  />
-                </div>
-              </div>
-            ))}
+              </>
+            )}
           </div>
           <div style={S.adminFooter}>
             <button tabIndex={-1} style={S.langBtn} onClick={closeAdmin}>{L.adminCancel}</button>
-            <button tabIndex={-1} style={S.startBtn} onClick={applyAdmin}>{L.adminApply}</button>
+            {adminTab === "state" && (
+              <button tabIndex={-1} style={S.startBtn} onClick={applyAdmin}>{L.adminApply}</button>
+            )}
           </div>
         </div>
       </div>

@@ -642,5 +642,14 @@ function makeStyles(vw, vh) {
     color: "#f0a0a0", borderRadius: s(4), padding: `${s(0)}px ${s(8)}px`,
     cursor: "pointer", outline: "none", fontSize: ts(14), lineHeight: 1.2,
   },
+  namesGroupBox: {
+    background: "rgba(0,0,0,0.25)", border: "1px solid rgba(201,169,97,0.18)",
+    borderRadius: s(8), padding: `${s(8)}px ${s(10)}px`, marginTop: s(10),
+  },
+  namesGroupHeader: {
+    display: "flex", justifyContent: "space-between", alignItems: "center",
+    marginBottom: s(6),
+  },
+  namesGroupTitle: { color: gold, fontSize: ts(13), fontWeight: "bold", letterSpacing: 1 },
   };
 }
