@@ -1144,7 +1144,7 @@ function assignPersonalities() {
 
 const BASE_SMALL_HU = 10;
 const BASE_LARGE_HU = 20;
-const STARTING_PER_ROUND = 60;
+const STARTING_PER_ROUND = 25;
 
 const ALL_TILE_KINDS = (() => {
   const kinds = [];
@@ -1889,7 +1889,7 @@ function MahjongGame() {
             )}
           </div>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
-            <span style={S.scoreChip}>{state.scores[pIdx]} {L.scoreLabel}</span>
+            <span style={{ ...S.scoreChip, ...(state.scores[pIdx] < 0 ? S.scoreChipBroke : {}) }}>{state.scores[pIdx]} {L.scoreLabel}</span>
             <span style={S.oppTileCount}>{opp.hand.length} {L.tiles}</span>
           </div>
         </div>
@@ -2365,7 +2365,7 @@ function MahjongGame() {
       {/* ---- PLAYER AREA ---- */}
       <div style={S.playerSection}>
         <div style={S.playerScoreRow}>
-          <span style={S.scoreChip}>{SL[PLAYER_IDX]}: {state.scores[PLAYER_IDX]} {L.scoreLabel}</span>
+          <span style={{ ...S.scoreChip, ...(state.scores[PLAYER_IDX] < 0 ? S.scoreChipBroke : {}) }}>{SL[PLAYER_IDX]}: {state.scores[PLAYER_IDX]} {L.scoreLabel}</span>
         </div>
         {/* Action bar */}
         <div style={S.actionBar}>
@@ -2774,6 +2774,10 @@ function makeStyles(vw, vh) {
     color: gold, fontSize: ts(11), fontWeight: "bold", letterSpacing: 0.5,
     background: "rgba(201,169,97,0.12)", border: `1px solid rgba(201,169,97,0.3)`,
     padding: `${s(2)}px ${s(8)}px`, borderRadius: s(10), whiteSpace: "nowrap",
+  },
+  scoreChipBroke: {
+    color: "#f0a0a0",
+    background: "rgba(200,80,80,0.18)", border: `1px solid rgba(220,120,120,0.55)`,
   },
   statusText: { color: greenDim, fontSize: ts(12), fontStyle: "italic" },
   statusTextYou: { color: gold, fontSize: ts(12), fontWeight: "bold" },
