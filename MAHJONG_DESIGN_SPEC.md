@@ -1,10 +1,8 @@
 # Mahjong Improvements Design Spec
 
-**Repository:** `FireboltQuill/mahjong`
-**Source roadmap:** `IMPROVEMENTS.md`
-**Document purpose:** The implementation contract for the nine planned features. State shapes, file paths, function signatures, acceptance criteria, and edge cases live here.
-
-**Read this alongside `IMPROVEMENTS.md`.** That document carries the *why* (rationale, sequencing, open questions); this one carries the *what* (state, schemas, signatures, acceptance criteria). If they disagree, the design spec wins on implementation details; the roadmap wins on intent and rationale. When a feature ships, update both: roadmap status in `IMPROVEMENTS.md`, technical deviations here.
+**Repository:** `FireboltQuill/mahjong`  
+**Source roadmap:** `IMPROVEMENTS.md`  
+**Document purpose:** Convert the improvement roadmap into a GitHub-ready implementation design spec with clear decisions, dependencies, state/storage contracts, edge cases, and acceptance criteria.
 
 ---
 
@@ -32,6 +30,17 @@ The main architectural direction is:
 
 This spec intentionally separates decisions from implementation notes. Any unresolved design choice should be recorded under **Open decisions** rather than mixed into feature prose.
 
+### 1.1 Non-goals
+
+The following are intentionally out of scope for this improvement pass:
+
+- Multiplayer support.
+- Backend or server-side persistence.
+- User accounts or cloud sync.
+- Online leaderboards for daily challenge.
+- A bundler/module migration. The current ordered script-tag architecture remains in place.
+- New Mahjong rulesets beyond the existing app rules.
+
 ---
 
 ## 2. Design principles
@@ -56,6 +65,8 @@ Every structured `localStorage` payload must include a schema version field:
 { v: 1, ...payload }
 ```
 
+Schema examples in this document show the JSON payload shape stored under a key. The actual implementation must still call `JSON.stringify` before writing and `JSON.parse` after reading because `localStorage` stores strings only.
+
 Simple scalar keys, such as a single boolean persisted as a string, may remain unversioned.
 
 On version mismatch, the default behaviour is to discard the old payload and start fresh unless a migration is both simple and clearly safer.
@@ -74,7 +85,7 @@ Every new UI feature must be checked on a narrow viewport, especially around the
 
 | Phase | Feature | Depends on | Primary files |
 |---:|---|---|---|
-| 0 | Shared persistence helpers and roadmap cleanup | None | `js/storage.jsx`, `index.html` |
+| 0 | Shared persistence helpers | None | `js/storage.jsx`, `index.html` |
 | 1 | Training mode / hints | Existing AI discard logic | `js/main.jsx`, `js/styles.jsx`, `js/lang.jsx` |
 | 2 | Resume in progress | Phase 0 | `js/main.jsx`, `js/storage.jsx`, `js/lang.jsx` |
 | 3 | Lifetime statistics | Phase 2 `gameId` | `js/lifetime.jsx`, `js/main.jsx`, `js/lang.jsx` |
@@ -99,20 +110,25 @@ Before adding more persisted features, add a small helper module so each feature
 ### 4.2 API
 
 ```js
-function loadJson(key, expectedVersion, fallback, migrate) {
+function resolveFallback(fallbackOrFactory) {
+  return typeof fallbackOrFactory === "function"
+    ? fallbackOrFactory()
+    : structuredClone
+      ? structuredClone(fallbackOrFactory)
+      : JSON.parse(JSON.stringify(fallbackOrFactory));
+}
+
+function loadJson(key, expectedVersion, fallbackOrFactory) {
   try {
     const raw = localStorage.getItem(key);
-    if (!raw) return fallback;
+    if (!raw) return resolveFallback(fallbackOrFactory);
     const parsed = JSON.parse(raw);
-    if (!parsed) return fallback;
-    if (parsed.v === expectedVersion) return parsed;
-    if (typeof migrate === "function") {
-      const migrated = migrate(parsed);
-      if (migrated && migrated.v === expectedVersion) return migrated;
+    if (!parsed || parsed.v !== expectedVersion) {
+      return resolveFallback(fallbackOrFactory);
     }
-    return fallback;
+    return parsed;
   } catch {
-    return fallback;
+    return resolveFallback(fallbackOrFactory);
   }
 }
 
@@ -133,39 +149,17 @@ function removeStorageKey(key) {
     return false;
   }
 }
-
-// Scalar (string/boolean-as-string) helpers — keep unversioned scalar keys
-// like `mahjong_training_mode` from inlining localStorage calls.
-function loadString(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw === null ? fallback : raw;
-  } catch {
-    return fallback;
-  }
-}
-
-function saveString(key, value) {
-  try {
-    localStorage.setItem(key, String(value));
-    return true;
-  } catch {
-    return false;
-  }
-}
 ```
 
-The optional `migrate` callback is the escape hatch from §2.3: callers can pass a function that takes the old payload and returns a `{ v: expectedVersion, ... }` shape. If migration returns anything else (null, wrong version, throws), `loadJson` falls back. Callers that want strict "discard on mismatch" simply omit `migrate`. Default policy stays "discard"; migrations are opt-in per call.
+Prefer passing a fallback factory for object/array defaults, for example `() => DEFAULT_LIFETIME_STATS`, so callers never share a mutable default object by accident.
 
 ### 4.3 Acceptance criteria
 
 - All new structured storage features use `loadJson` and `saveJson`.
-- All scalar storage features use `loadString` and `saveString` — no inline `localStorage.getItem` in feature code.
-- Version mismatch with no `migrate` callback returns fallback without throwing.
-- Version mismatch with a `migrate` callback returning the expected version returns the migrated payload.
-- Version mismatch with a `migrate` callback that throws or returns the wrong shape returns fallback without throwing.
-- Corrupt JSON returns fallback without throwing.
+- Version mismatch returns a fresh fallback without throwing.
+- Corrupt JSON returns a fresh fallback without throwing.
 - Storage write failure does not crash the app.
+- Mutating a returned fallback object does not pollute future default loads.
 
 ---
 
@@ -201,7 +195,6 @@ Important placement:
 
 - `hintUsedThisGame` belongs on the match-level game info created by `createInitialState`.
 - It must not be initialized by `initRound`, because `nextRound` calls `initRound({...prev, ...})` and the field must carry through unchanged across rounds.
-- **Verify before implementing:** confirm `nextRound` in `main.jsx` actually spreads `prev` into `initRound`'s argument. If it doesn't (e.g., it constructs a fresh `gameInfo` by hand), the match-level field will be silently dropped at round transition. The fix is to spread `prev` rather than work around it at the call site.
 
 The computed hint itself is not stored on state. It is derived on demand.
 
@@ -254,6 +247,7 @@ No new AI heuristic is required for the first version.
 - The hint button only appears during the player’s valid discard window.
 - Clicking `Hint` highlights exactly one tile.
 - Clicking `Hint` sets `state.hintUsedThisGame` once per match.
+- Refreshing after using a hint preserves `hintUsedThisGame = true`.
 - Advancing rounds does not reset `hintUsedThisGame`.
 - A 360×640 viewport does not clip the hint tag.
 - Selecting a different tile clears the hint highlight.
@@ -273,7 +267,6 @@ A refresh, accidental tab close, or page backgrounding should not lose a game in
 - Saves are debounced during normal play but flushed synchronously on page lifecycle events.
 - Admin-modified games are resumable.
 - Admin-modified games are not replayable unless future replay support explicitly records admin actions.
-- Admin-touched games are detectable via `state.adminTouched = true`, set inside `applyAdmin` and persisted through the resume save. Feature 9 uses this to hide or disable the replay tab; without the flag, replay would silently produce nonsense for these games.
 
 ### 6.3 Storage schema
 
@@ -306,19 +299,17 @@ Generation:
 
 ```js
 function makeGameId() {
-  if (crypto?.randomUUID) return crypto.randomUUID();
-  // Non-secure-context fallback. Uses Math.random; gameId is an
-  // identifier with no gameplay impact, so this is the one allowed
-  // exception to the determinism rule (see IMPROVEMENTS.md cross-cutting).
+  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  // Non-secure-context fallback. Uses Math.random; gameId is an identifier
+  // with no gameplay impact, so this is the one allowed exception to the
+  // determinism rule (see §2.1).
   const t = Date.now().toString(36);
   const r = Math.random().toString(36).slice(2).padEnd(8, "0");
   return `${t}-${r}`;
 }
 ```
 
-`padEnd` is required: `Math.random().toString(36).slice(2)` can return a string shorter than 8 chars when the random draw is small (`(0.5).toString(36) === "0.i"`, slice(2) = `"i"`). Padding fixes the tail length.
-
-Once Feature 5 lands and `randomUint32()` exists in `rng.jsx`, the fallback may alternatively be `randomUint32().toString(36) + randomUint32().toString(36)` for a stronger source — either form is acceptable for an identifier-only value.
+The `padEnd` is load-bearing: `Math.random().toString(36).slice(2)` can return a string shorter than 8 chars when the random draw is small. For example, `(0.5).toString(36) === "0.i"`, so `slice(2) === "i"`. Without padding, IDs occasionally collapse to a tail like `"i"` and stop looking like identifiers in logs. Once Feature 5 ships `randomUint32()`, the fallback may switch to `randomUint32().toString(36) + randomUint32().toString(36)` for a stronger source — either form is acceptable because `gameId` is identifier-only.
 
 Rules:
 
@@ -344,22 +335,20 @@ Recommended implementation:
 Add a game-state revision counter:
 
 ```js
-state.persistRev  // monotonically increasing integer, starts at 0
+state.persistRev
 ```
 
-The save effect depends on:
+The save effect can then depend on:
 
 ```js
 [state.persistRev, showMenu, state.gameOverAcknowledged]
 ```
 
-This is safer than manually listing coarse fields (`phase`, `currentTurn`, `roundNumber`, `scores`), because future state fields could be added without remembering to add them to the watch list.
+This is safer than manually listing coarse fields such as `phase`, `currentTurn`, `roundNumber`, and `scores`, because later replay/action-log changes could otherwise fail to trigger a save.
 
 #### 6.6.1 Bump rules
 
-The bump is co-located with the `setState` merge that produces the underlying change. Feature 9a's single-`setState` invariant (§13.5) requires all four of (step result + actionLog append + log append + persistRev increment) to land in the same merge — so adding the bump is a one-line change per step wrapper.
-
-**Phase ordering caveat.** Feature 2 ships before Feature 9a per the phases table in §3, but Feature 9a is what *makes* `persistRev` a one-line addition by funnelling state transitions through engine step wrappers. In Phase 2, before the wrappers exist, each existing `setState` callsite that performs a gameplay mutation must be hand-edited to include `persistRev: prev.persistRev + 1`. Expect this to be sprawling — `main.jsx` is the main offender. Phase 9a's wrapper migration consolidates those scattered bumps into the four-thing merge described above; until then, treat the per-callsite bumps as scaffolding with a known follow-up.
+The bump is co-located with the `setState` merge that produces the underlying change. Feature 9a's single-`setState` invariant (§13.5) requires all four of (step result + actionLog append + log append + persistRev increment) to land in the same merge — so adding the bump is a one-line change per step wrapper once those wrappers exist.
 
 **Bump these mutations:**
 
@@ -370,7 +359,7 @@ The bump is co-located with the `setState` merge that produces the underlying ch
 | `stepClaim` wrapper | meld formation, hand/discards change | yes |
 | `stepDeclareHu` wrapper | win resolution | yes |
 | `stepDeclareGang` wrapper | meld formation, replacement draw | yes |
-| `stepResolvePass` wrapper | claim window closes, turn advances | yes |
+| `stepResolvePass` wrapper / `stepPassClaim` | claim window closes, turn advances | yes |
 | `nextRound` | round transition | yes |
 | `applyAdmin` | full state replacement | yes |
 | `gameOverAcknowledged` flip | terminal acknowledgement | yes |
@@ -392,10 +381,14 @@ The bump is co-located with the `setState` merge that produces the underlying ch
 **Borderline cases — resolved:**
 
 - `state.hintUsedThisGame` toggle (Feature 1) — **bump.** Match-scope flag that affects achievement outcome; needs to survive resume.
-- `state.adminTouched` flag (set inside `applyAdmin`, see Feature 9 §14.10) — **bumped transitively** by the `applyAdmin` row above.
+- `state.adminTouched` flag (set inside `applyAdmin`) — **bumped transitively** by the `applyAdmin` row above.
 - `state.dailyGame` flag (Feature 5) — **bumped** at game-start when `createInitialState` returns; this is the initial-state load and the counter starts at 0 then bumps on the first user mutation.
 
 When in doubt, the question to ask is: "If the user refreshes after this mutation, do they expect to see the post-mutation state on restore?" If yes, bump.
+
+#### 6.6.2 Phase ordering caveat
+
+Feature 2 ships before Feature 9a per §3, but Feature 9a is what *makes* `persistRev` a one-line addition by funnelling state transitions through engine step wrappers. In Phase 2, before the wrappers exist, each existing gameplay-mutating `setState` callsite in `main.jsx` must be hand-edited to include `persistRev: prev.persistRev + 1`. Expect this to be sprawling. Phase 9a's wrapper migration consolidates those scattered bumps into the four-thing merge above; until then, treat the per-callsite bumps as scaffolding with a known follow-up.
 
 ### 6.7 Debounce and lifecycle flush
 
@@ -412,15 +405,18 @@ Register handlers for:
 - `pagehide`
 - `visibilitychange` when `document.hidden === true`
 
-Each handler calls `flushSave()` **unconditionally** — not gated on `saveTimerRef.current` being non-null.
+Each handler calls `flushSave()` **unconditionally** — not gated on `saveTimerRef.current` being non-null. `flushSave()` itself decides whether a save is still valid.
 
-**Why unconditional matters.** Consider the sequence: user discards → debounce timer fires → save written → 600ms passes → user closes tab. With a gated flush (`if (saveTimerRef.current) flushSave()`), the close-event handler no-ops because the timer already fired and was cleared. Any setState between the timer fire and the close (e.g. an auto-play AI move that happened during those 600ms) would be lost. The unconditional form pays a redundant write in the common case (cheap — `localStorage.setItem` of an already-current state is ~microseconds) but guarantees the close-event always captures the latest state.
+**Why unconditional matters.** Consider the sequence: user discards → debounce timer fires → save written → 600ms passes → user closes tab. With a gated flush (`if (saveTimerRef.current) flushSave()`), the close-event handler no-ops because the timer already fired and was cleared. Any `setState` between the timer fire and the close (e.g. an auto-play AI move that happened during those 600ms) would be lost. The unconditional form pays a redundant write in the common case (cheap — `localStorage.setItem` of an already-current state is ~microseconds) but guarantees the close-event always captures the latest state.
 
 `flushSave()` must:
 
 - Read the latest state from `stateRef.current`.
-- Write synchronously to `localStorage`.
 - Clear any pending debounce timer so it can't later overwrite a more recent flush.
+- Call `shouldPersistResume(state, showMenu)` before writing.
+- If the state is resumable, write synchronously to `localStorage`.
+- If the state is no longer resumable, remove `mahjong_in_progress` instead of writing a stale snapshot.
+- Respect a `resumeClearedRef` or equivalent guard so lifecycle events cannot resurrect a save that was intentionally cleared after game completion or a fresh-game start.
 
 **`stateRef` must be updated in its own ungated effect**, not inside the debounced save effect:
 
@@ -468,6 +464,7 @@ If the user changes language, difficulty, wind rounds, or training mode while a 
 - Closing the tab shortly after a move loses at most one tile action.
 - iOS-style backgrounding is handled as well as practical through `pagehide` and `visibilitychange`.
 - Animation and reaction state never reappears after resume.
+- Lifecycle events after a clear trigger do not recreate `mahjong_in_progress`.
 
 ---
 
@@ -504,7 +501,7 @@ localStorage["mahjong_lifetime_stats"] = {
 
 `lifetimeUpdatedFor` stores the most recent `gameId` already folded into lifetime stats.
 
-**Defaults.** `DEFAULT_LIFETIME_STATS` zeros every counter except the four "extremum" fields, which start as `null`:
+**Defaults.** `DEFAULT_LIFETIME_STATS` zeros every counter except the four extremum fields and `lifetimeUpdatedFor`, which start as `null`:
 
 - `biggestSingleGain: null` — first observed gain replaces null; subsequent updates take `Math.max`.
 - `biggestSingleLoss: null` — first observed loss replaces null; subsequent updates take `Math.min` (losses are negative).
@@ -512,7 +509,7 @@ localStorage["mahjong_lifetime_stats"] = {
 - `worstEndingBalance: null` — first finished game's ending balance replaces null; subsequent updates take `Math.min`.
 - `lifetimeUpdatedFor: null`.
 
-`null` is preferred over `±Infinity` so the UI can render "—" before any game is played without a sentinel-value check. `mergeLifetime` must short-circuit the `Math.min`/`Math.max` calls when the prior value is `null`.
+`null` is preferred over `0` so the UI can render "—" before any game is played without a sentinel-value check. `mergeLifetime` must short-circuit the `Math.min`/`Math.max` calls when the prior value is `null`. Without this, the UI shows "Best balance: 0" before any game completes — falsely informative.
 
 ### 7.3 Counter semantics
 
@@ -525,6 +522,10 @@ Human-only counters:
 - `roundsDianpaoGiven`: increments when the human discards the winning tile.
 - `smallHu` and `largeHu`: mutually exclusive win-type counters; together they equal `roundsWon`.
 - `zimoHu` and `sevenPairsHu`: independent counters that may overlap with `smallHu` or `largeHu`.
+- `biggestSingleGain`: largest single completed-round human score increase.
+- `biggestSingleLoss`: largest single completed-round human score decrease.
+- `bestEndingBalance`: highest human final score at game end.
+- `worstEndingBalance`: lowest human final score at game end.
 - `currentWinStreak` / `longestWinStreak`: consecutive games where the human has the highest final score, including shared first.
 - `totalScoreNet`: sum of `finalScore - startingScore` across all games.
 
@@ -568,6 +569,10 @@ Stats modal tabs or sections:
 
 Include a `Reset stats` action with confirmation.
 
+Decision:
+
+- Resetting lifetime stats does not reset achievements. Achievements have a separate reset action if one is added later.
+
 ### 7.7 Acceptance criteria
 
 - Stats survive refresh and new sessions.
@@ -576,6 +581,7 @@ Include a `Reset stats` action with confirmation.
 - `smallHu + largeHu === roundsWon`.
 - `zimoHu` and `sevenPairsHu` can cause total Hu-type counters to exceed `roundsWon`.
 - Reset stats requires confirmation and restores the default zeroed shape.
+- Resetting stats does not remove unlocked achievements.
 
 ---
 
@@ -624,8 +630,6 @@ Use an explicit trigger and mode rather than overloading `scope`:
 - `normal`: non-daily games only.
 - `daily`: daily games only.
 
-**Future extensibility.** If training-mode-specific achievements ever appear (e.g., "win 5 games using hints"), extend `mode` with `"training"` and `"non-training"` rather than re-introducing predicate-level gating. Keeping the framework filter authoritative is the same principle that drove the `purist` decision in §8.6 — don't dilute it.
-
 Predicate context:
 
 ```js
@@ -633,9 +637,24 @@ Predicate context:
   state,
   lifetime,
   latestRoundResult,
-  roundResults
+  roundResults,
+  dailyResults,
+  roundStats
 }
 ```
+
+`roundStats` should contain any per-round facts that are hard to infer safely after the fact:
+
+```js
+{
+  humanClaimedDiscardThisRound,
+  wallCountAtWin,
+  scoresAfterRound,
+  humanWasLowestOrTiedLowestAfterRound
+}
+```
+
+Do not rely only on visible meld state for `no_claim_win`; record whether the human actually claimed a discard during the round.
 
 ### 8.5 Seed achievement list
 
@@ -668,34 +687,13 @@ Daily-only:
 - Game win means human final score equals the maximum final score.
 - Shared first counts as a win.
 
-**Data requirement.** This predicate needs per-round cumulative standings, not just per-round outcomes. Today's `roundResults` shape (as appended by `applyWin`) captures the resolution of each round but not the four-player cumulative scores after that round. Before this achievement can ship, extend the entry shape to:
-
-```js
-{
-  // ...existing fields (winner, winType, delta, etc.)
-  scoresAfter: [number, number, number, number]
-}
-```
-
-`scoresAfter` is computed inside `applyWin` (or the round-end branch of the engine wrappers, post-extraction) from the pre-round scores plus the resolved deltas. With that field present, the predicate is:
-
-```js
-const lowRounds = roundResults.filter(r =>
-  r.scoresAfter[0] === Math.min(...r.scoresAfter)
-).length;
-const humanWon = state.scores[0] === Math.max(...state.scores);
-return humanWon && lowRounds >= Math.ceil(state.totalRounds / 2);
-```
-
-Without `scoresAfter`, `comeback_kid` cannot be implemented honestly; do not ship it against a `state.scores`-only approximation that conflates final standings with mid-game standings.
-
 `purist` is registered with `mode: "normal"`, so the achievement framework already filters out daily games before the predicate is called. The predicate itself is then minimal:
 
 ```js
 humanWon && state.hintUsedThisGame === false
 ```
 
-The daily exclusion lives in `mode: "normal"`, not in the predicate. Don't add a `state.dailyGame !== true` clause here — it would be redundant with the `mode` filter and would suggest the framework's mode handling isn't load-bearing, which is the whole point of having a `mode` field.
+Do **not** add a `state.dailyGame !== true` clause to the predicate. The daily exclusion lives in `mode: "normal"`, not in the predicate. Duplicating it would signal that the framework's mode handling isn't load-bearing — which is the whole point of having a `mode` field. Every future achievement would then belt-and-braces the same way, and the mode field would decay into documentation.
 
 ### 8.7 Update order with lifetime stats
 
@@ -762,9 +760,9 @@ const defaultRng = {
 };
 
 function randomUint32() {
-  if (crypto?.getRandomValues) {
+  if (globalThis.crypto?.getRandomValues) {
     const arr = new Uint32Array(1);
-    crypto.getRandomValues(arr);
+    globalThis.crypto.getRandomValues(arr);
     return arr[0] >>> 0;
   }
   return Math.floor(Math.random() * 0x100000000) >>> 0;
@@ -788,45 +786,6 @@ function shuffle(arr, rng) {
 ```
 
 All gameplay-affecting reorders must use explicit RNG input.
-
-### 9.3.1 Existing `Math.random` call sites (audit checklist)
-
-Exhaustive inventory at time of writing — every one of these must be addressed during Feature 5 implementation:
-
-| File | Line | Purpose | Fix |
-|---|---:|---|---|
-| `js/tiles.jsx` | 47 | `createTile` id | Replace with caller-supplied deterministic id (see §9.4) |
-| `js/tiles.jsx` | 108 | `shuffle` swap | Thread `rng` argument as above |
-| `js/names.jsx` | 62 | `pickN` Fisher-Yates | Thread `rng` argument; signature becomes `pickN(pool, count, rng)` |
-| `js/names.jsx` | 76 | `pickPlayerNames` group pick | Thread `rng` argument; signature becomes `pickPlayerNames(groups, count, rng)` |
-| `js/ai.jsx` | 476 | `assignPersonalities` shuffle | See §9.3.2 — also fix the biased-sort bug |
-
-Confirmed by inspection: `aiChooseDiscard` and `aiDecideClaim` contain **no** `Math.random` calls. No change needed in those functions.
-
-### 9.3.2 Fix the biased sort in `assignPersonalities`
-
-The current implementation at `ai.jsx:476` is:
-
-```js
-const shuffled = [...PERSONALITY_POOL].sort(() => Math.random() - 0.5);
-```
-
-This has two independent bugs:
-
-1. **Non-deterministic.** Reads `Math.random` — breaks daily-wall and replay invariants once they exist.
-2. **Non-uniform.** `Array.prototype.sort` with a non-deterministic comparator violates the sort contract and produces a biased permutation distribution (well-documented; v8 in particular skews heavily). This is a real bug independent of determinism — some personality assignments are systematically more likely than others.
-
-Fix both at once:
-
-```js
-function assignPersonalities(rng) {
-  const arr = [...PERSONALITY_POOL];
-  shuffle(arr, rng);  // proper Fisher-Yates from tiles.jsx, threaded rng
-  return [null, arr[0], arr[1], arr[2]];  // seat 0 is human
-}
-```
-
-Call site is `createInitialState` (`game-state.jsx:9`) — thread `cosmeticRng` per §9.6.
 
 ### 9.4 Deterministic tile IDs
 
@@ -853,34 +812,15 @@ Rules:
 - Admin-created tiles use IDs starting at `max(existingNumericId + 1, 1000)`.
 - Admin tile ID allocation is local to each `applyAdmin` invocation and seeded by the current board state.
 
-#### 9.4.1 What "current board state" means for the admin id scan
+**Admin tile-ID reuse — acknowledged limitation.** The collision-floor scan only considers tiles currently present on the board. If an admin pass removes a tile, its numeric ID is released — a later admin pass scanning the board may mint a fresh tile with the same numeric ID, and the FLIP ref map (§10.5) keyed on `tile.id` may still hold a stale slot for the removed tile. The result is animation glitches during admin sessions where two distinct tile entities briefly share a ref slot.
 
-The collision-floor scan must look at every place a tile id can live. Exhaustive list:
+This is left as an acknowledged non-bug rather than fixed because:
 
-- `state.players[i].hand` for each seat
-- `state.players[i].openMelds[j].tiles` for each seat / meld
-- `state.players[i].discards` for each seat
-- `state.wall`
-- `state.lastDiscard`
-- `state.lastDrawn`
+1. Admin-touched matches are excluded from replay (§6.2), so determinism isn't impacted.
+2. Tracking `state.usedAdminIds` at match scope to avoid reuse adds state for a cosmetic concern.
+3. Admin tooling exists for debugging, not gameplay polish.
 
-`state.lastDrawn` is included as belt-and-braces. Under normal flow it always points to a tile also present in the drawer's hand, so the hand scan catches it transitively. But `applyAdmin` rebuilds player hands wholesale and can leave a stale `lastDrawn` reference pointing at a tile no longer present anywhere else — the scan would miss it, and the next admin invocation could mint a colliding id. Scanning `lastDrawn` is cheaper than remembering to null it inside `applyAdmin`.
-
-Parse each `t.id` as `parseInt(id, 10)`; treat non-numeric ids (from pre-Feature-5 saves) as `-1`. The floor at `1000` then handles the case where every existing id is non-numeric.
-
-#### 9.4.2 Admin tile ID reuse and FLIP refs
-
-The scan only considers *currently present* tiles. If an admin pass removes a tile, its ID is released — a later admin pass scanning the board may mint a fresh tile with the same numeric ID, because nothing in state remembers that the ID was ever used. Under normal play this is harmless. Under animation it is not: §10.5 FLIP refs key off `tile.id`, and `tileRefsRef.current` may still hold a stale ref slot from the removed tile if cleanup hasn't run yet.
-
-**Resolution:** track admin-minted IDs at match scope so they're never reused within a match.
-
-```js
-state.usedAdminIds = []  // array of numeric ids minted by any applyAdmin in this match
-```
-
-`applyAdmin` computes its starting floor as `max(scannedMax + 1, 1000, max(state.usedAdminIds) + 1)` and appends every newly minted id to `state.usedAdminIds` before returning. Persists across rounds (lives on match-scope game info, like `gameId`).
-
-Acceptable alternative: no tracking, but document that admin-touched matches set `state.adminTouched = true` (which they already do per §6.2) and that animation glitches in admin-touched matches are an acknowledged non-bug. Pick one and apply it consistently.
+If admin tile animations ever become visibly wrong in practice, the fix is to maintain `state.usedAdminIds = []` and compute the floor as `max(scannedMax + 1, 1000, max(state.usedAdminIds) + 1)`, appending newly minted IDs before returning from `applyAdmin`.
 
 ### 9.5 Seed model
 
@@ -934,6 +874,10 @@ Therefore:
 - `deckRng` is derived from `roundSeed` and only shuffles the deck.
 - `cosmeticRng` is derived from `matchSeed ^ constant` and is allowed to vary based on local name/personality consumption.
 
+Daily challenge determinism applies to both wall order and AI gameplay decisions. Custom local name groups may affect display names only. They must not change AI strategy, AI personality, discard logic, claim logic, or any other gameplay-affecting decision in daily mode.
+
+Daily mode should use fixed AI profiles derived from the daily seed or fixed constants, not locally customised name/personality selection.
+
 ### 9.8 Daily seed
 
 Daily date key:
@@ -943,16 +887,6 @@ new Date().toISOString().slice(0, 10)
 ```
 
 This is UTC by design.
-
-**Capture point.** The date string is captured exactly once, when `createInitialState` is called for a daily game, and stored on state:
-
-```js
-state.dailyDate = "YYYY-MM-DD"  // UTC, frozen at game-start
-```
-
-All subsequent reads — the seed derivation, the result-storage key in `mahjong_daily.results`, the UI "today's daily" label, the `already-played` check on game-over — must read `state.dailyDate`, not recompute `new Date().toISOString().slice(0, 10)`.
-
-This prevents a midnight-UTC flip mid-game from re-keying an in-progress daily as the next day's. It also means a player starting at 23:55 UTC continues playing "today's" daily after the UTC rollover — by intent. The menu's "today's daily" affordance, however, *does* recompute the current UTC date each render so the menu reflects the current day's challenge after rollover.
 
 Seed hash:
 
@@ -969,39 +903,68 @@ function seedFromDate(str) {
 
 The UI should clearly show that the daily challenge is UTC-based and should show the next reset time in the user’s local time.
 
-### 9.9 Daily result storage
+**Capture point.** The date string is captured exactly once, when `createInitialState` is called for a daily game, and stored on state:
+
+```js
+state.dailyDate = "YYYY-MM-DD"  // UTC, frozen at game-start
+```
+
+All subsequent reads — the seed derivation, the result-storage key in `mahjong_daily.results`, the in-game "today's daily" label, the already-played check on game-over — must read `state.dailyDate`, not recompute `new Date().toISOString().slice(0, 10)`.
+
+This prevents a midnight-UTC flip mid-game from re-keying an in-progress daily as the next day's. A player starting at 23:55 UTC therefore continues playing "today's" daily after the UTC rollover — by intent. The menu's "today's daily" affordance, however, *does* recompute the current UTC date each render so the menu reflects the current day's challenge after rollover.
+
+### 9.9 Daily challenge settings
+
+Daily challenge uses fixed settings so results are comparable:
+
+- Difficulty: `expert`.
+- Wind rounds: `1`.
+- Training mode: forced off.
+- Admin tools: disabled.
+- Replay/spectate/non-recording replays do not create or overwrite the recorded daily result.
+
+### 9.10 Daily result storage
 
 ```js
 localStorage["mahjong_daily"] = {
   v: 1,
+  rulesVersion: 1,
   results: {
     [YYYY_MM_DD_UTC]: {
       played: true,
+      recorded: true,
+      completedAt,
+      won,
       finalScore,
-      rank
+      rank,
+      matchSeed
     }
   }
 }
 ```
 
+`won` is stored explicitly rather than inferred from `rank` so daily streak calculations remain stable if ranking or tie rules change later.
+
 If already played today:
 
 - Show previous result.
 - Allow `Play again`, but mark it as non-recording.
+- Non-recording plays do not update `results[dateKeyUtc]`, daily achievements, or daily streak counters.
 
-### 9.10 Resume save migration
+### 9.11 Resume save migration
 
 When deterministic tile IDs ship, bump `mahjong_in_progress.v` from `1` to `2`.
 
 Old saves should be discarded rather than migrated.
 
-### 9.11 Acceptance criteria
+### 9.12 Acceptance criteria
 
 - Same UTC date produces the same initial wall across browsers and users.
-- Custom local player names do not affect wall order.
-- Daily challenge uses fixed difficulty and round settings.
+- Custom local player names do not affect wall order or AI gameplay decisions.
+- Daily challenge uses the fixed settings listed in section 9.9.
 - Daily challenge disables training mode.
 - Daily results are keyed by UTC date.
+- A daily replay/non-recording play does not overwrite the first recorded result.
 - UI explains UTC reset timing.
 - No gameplay-affecting code path introduced in this phase uses direct `Math.random()`.
 - Admin-created tiles cannot collide with existing deck or previous admin-created tile IDs.
@@ -1298,15 +1261,6 @@ On resume, perform both steps unconditionally — do not let one short-circuit t
 
 Do not gate Case B on "Case A didn't catch it" — that creates a window where a Case A-covered resume leaves a stale side-channel that fires on the *next* round's resolution. Always consume the side-channel on resume; let it be a no-op when Case A handled the suppression.
 
-#### 12.6.2 React Strict Mode verification
-
-Strict Mode is not currently enabled in this codebase, so this is a future concern rather than an immediate blocker. **If Strict Mode is ever turned on**, re-test:
-
-- The `prevResolutionRef` comparison: refs persist across Strict Mode's intentional double-effect-run, so the SFX should fire once. First invocation sees `prev = null`, fires, writes ref to non-null. Second invocation sees `prev = non-null`, no-ops.
-- The Case B side-channel consumption: `mahjong_last_announced` is read from `localStorage` inside the effect body and the `suppressNextResolutionSfx` flag is consumed on the next transition. Strict Mode's double-run could consume the flag twice in succession — verify that the second run finds the flag already cleared and behaves correctly.
-
-Acceptance criterion if Strict Mode is enabled: refresh inside the <500ms debounce window after a win, with Strict Mode on, fires exactly one resolution SFX (not zero, not two).
-
 ### 12.7 UI
 
 Menu:
@@ -1352,11 +1306,12 @@ or expanded `js/game-state.jsx` if keeping files smaller is preferred.
 ### 13.3 Pure step functions
 
 ```js
-stepDraw(state, seat)
+stepDraw(state, seat, expectedTileId)
 stepDiscard(state, seat, tileId)
 stepClaim(state, claim)
-stepDeclareHu(state, seat)
-stepDeclareGang(state, seat, tileKey)
+stepPassClaim(state, seat, discardedTileId)
+stepDeclareHu(state, declaration)
+stepDeclareGang(state, declaration)
 stepResolvePass(state)
 ```
 
@@ -1413,6 +1368,7 @@ Types:
 "draw"
 "discard"
 "claim"
+"pass_claim"
 "declare_hu"
 "declare_gang"
 "resolve_pass"
@@ -1421,13 +1377,42 @@ Types:
 Schemas:
 
 ```js
-{ seat, type: "draw", tileId }
-{ seat, type: "discard", tileId }
-{ seat, type: "claim", claimType, tileIds }
-{ seat, type: "declare_hu", winType, winningTileId, discarder }
-{ seat, type: "declare_gang", tileKey, source }
-{ seat, type: "resolve_pass" }
+{ type: "draw", seat, expectedTileId }
+
+{ type: "discard", seat, tileId }
+
+{
+  type: "claim",
+  seat,
+  claimType,
+  discarder,
+  claimedTileId,
+  handTileIds,
+  resultingMeldTileIds
+}
+
+{ type: "pass_claim", seat, discardedTileId }
+
+{
+  type: "declare_hu",
+  seat,
+  winningTileId,
+  discarder,
+  expectedWinType
+}
+
+{
+  type: "declare_gang",
+  seat,
+  tileKey,
+  source,
+  tileIds
+}
+
+{ type: "resolve_pass" }
 ```
+
+Replay actions must contain enough information to reproduce human and AI choices without running live AI decision wrappers. The replay engine may validate fields such as `expectedTileId` or `expectedWinType`, but replay should not depend on re-deciding those choices.
 
 ### 13.7 Acceptance criteria
 
@@ -1435,6 +1420,7 @@ Schemas:
 - Engine step functions are callable without React component context.
 - Step functions do not write logs or trigger UI side effects.
 - Action log entries align exactly with produced state transitions.
+- Human and AI choices are fully represented in the action log.
 - AI autoplay cannot interleave between state transition and action-log append.
 
 ---
@@ -1537,7 +1523,7 @@ On resume:
 ### 14.7 Replay engine
 
 ```js
-function replayRound(roundSeed, gameInfo, actions, upToActionIdx) {
+function replayRound(roundSeed, gameInfo, actions, upToActionIdx, lang) {
   let state = initRound(gameInfo, lang, roundSeed);
   for (const action of actions.slice(0, upToActionIdx + 1)) {
     state = applyReplayAction(state, action);
@@ -1553,16 +1539,7 @@ Rules:
 - Do not run live wrappers.
 - Do not emit logs, audio, reactions, or live-game side effects.
 
-### 14.8 Admin-touched games
-
-Admin-touched games (`state.adminTouched === true`, set inside `applyAdmin` per §6.2) cannot be replayed — admin overrides bypass the action log, so the replay engine has no actions to re-run. Detect and handle:
-
-- In the round-over modal: hide the Replay tab entirely, or render it with a `"Replay unavailable — game was modified via admin console"` placeholder.
-- In the game-over modal's `Replay any round` picker: omit admin-touched games from the picker list.
-
-The `adminTouched` flag is *match-scope* — once any round of a match has been admin-modified, the entire match's replay is unreliable (subsequent rounds may inherit corrupted scores or dealer rotation that the replay engine can't reproduce). Don't try to replay specific non-admin rounds of an admin-touched match.
-
-### 14.9 UI
+### 14.8 UI
 
 Round-over modal:
 
@@ -1582,7 +1559,7 @@ Game-over modal:
 - Add `Replay any round` picker.
 - Opens a dedicated replay modal sharing the same replay UI component.
 
-### 14.10 Acceptance criteria
+### 14.9 Acceptance criteria
 
 - A completed round can be replayed from action 0 to final action.
 - Replay result at final action matches the live final round state.
@@ -1592,7 +1569,6 @@ Game-over modal:
 - Replay works after resuming mid-game.
 - Replay UI fits on a 360px-wide viewport.
 - Old replay entries are evicted down to 10 games.
-- Admin-touched games (`state.adminTouched === true`) are excluded from the replay UI; resume still works for them.
 
 ---
 
@@ -1611,6 +1587,8 @@ Exception:
 Daily challenge forces `trainingMode = false` for fairness.
 
 The saved menu preference is not overwritten; daily mode only overrides the setting for that game.
+
+Daily mode also uses fixed AI gameplay profiles. Local custom names/personality cosmetics must not alter AI decisions in daily games.
 
 ### 15.3 Daily challenge × stats and achievements
 
@@ -1717,16 +1695,16 @@ Final target order:
 
 ## 18. Storage key registry
 
-| Key | Versioned | Helper | Owner | Purpose |
-|---|---:|---|---|---|
-| `mahjong_training_mode` | No | `loadString`/`saveString` | Training mode | Boolean menu setting stored as string |
-| `mahjong_in_progress` | Yes | `loadJson`/`saveJson` | Resume | Current resumable game |
-| `mahjong_lifetime_stats` | Yes | `loadJson`/`saveJson` | Stats | Lifetime counters |
-| `mahjong_achievements` | Yes | `loadJson`/`saveJson` | Achievements | Unlocked badge dates |
-| `mahjong_daily` | Yes | `loadJson`/`saveJson` | Daily challenge | Daily results by UTC date |
-| `mahjong_audio` | Yes | `loadJson`/`saveJson` | Audio | Volume and mute settings |
-| `mahjong_last_announced` | Yes | `loadJson`/`saveJson` | Audio/resume | Resolution-SFX suppression side channel |
-| `mahjong_replays` | Yes | `loadJson`/`saveJson` (with quota fallback, §14.5.1) | Replay | Finished-round replay data |
+| Key | Versioned | Owner | Purpose |
+|---|---:|---|---|
+| `mahjong_training_mode` | No | Training mode | Boolean menu setting stored as string |
+| `mahjong_in_progress` | Yes | Resume | Current resumable game |
+| `mahjong_lifetime_stats` | Yes | Stats | Lifetime counters |
+| `mahjong_achievements` | Yes | Achievements | Unlocked badge dates |
+| `mahjong_daily` | Yes | Daily challenge | Recorded daily results and streak source data by UTC date |
+| `mahjong_audio` | Yes | Audio | Volume and mute settings |
+| `mahjong_last_announced` | Yes | Audio/resume | Resolution-SFX suppression side channel |
+| `mahjong_replays` | Yes | Replay | Finished-round replay data |
 
 ---
 
@@ -1747,6 +1725,7 @@ Final target order:
 
 - Refresh mid-round.
 - Refresh immediately after a discard.
+- Refresh immediately after using a hint.
 - Refresh on round-over modal.
 - Refresh on game summary.
 - Corrupt each structured localStorage key and confirm app recovers.
@@ -1776,3 +1755,34 @@ Final target order:
 - Resume after round-over; SFX does not replay.
 - Resume inside debounce-loss window; no duplicate resolution SFX.
 - Replay current round before any completed round exists.
+
+---
+
+### 19.6 Daily challenge regression
+
+- Same UTC date produces the same initial wall in two fresh browser profiles.
+- Local custom names do not change wall order.
+- Local custom names do not change AI gameplay decisions in daily mode.
+- First recorded daily result is preserved after a non-recording replay/play-again run.
+- Daily win streak uses explicit `won` values from `mahjong_daily`.
+- Starting a daily at 23:55 UTC and finishing past 00:05 UTC writes the result under the starting date's key, not the rollover date.
+
+### 19.7 Replay regression
+
+- Replaying a round does not call AI decision helpers.
+- Replaying a round validates `expectedTileId` where practical.
+- Human pass decisions and AI choices are represented in the action log.
+- Replay final state matches the original resolved round state.
+- `mahjong_replays` write degrades to dropping the oldest game when quota is exceeded.
+
+## 20. Document workflow
+
+This spec lives at the repo root (`MAHJONG_DESIGN_SPEC.md`) alongside `IMPROVEMENTS.md`. The repo deploys to GitHub Pages from `main`, so spec edits are committed directly to `main` rather than through a docs branch.
+
+Conventions:
+
+- `IMPROVEMENTS.md` is the high-level roadmap and checklist (the *why* and the sequencing).
+- `MAHJONG_DESIGN_SPEC.md` (this document) is the implementation contract (the *what* — state, schemas, signatures, acceptance criteria).
+- When a feature ships, both documents are updated in the same commit: roadmap status in `IMPROVEMENTS.md`, any technical deviations from this spec recorded inline here.
+- If the two disagree, the design spec wins on implementation details; the roadmap wins on intent.
+
