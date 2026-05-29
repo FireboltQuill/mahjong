@@ -319,6 +319,35 @@ function makeStyles(vw, vh) {
     transform: `translateY(-${s(10)}px)`, filter: "brightness(1.15)",
   },
   handTileClickable: { cursor: "pointer", outline: "none" },
+  // Training-mode hint (spec §5.4). Gold glow + "↑ best" tag positioned
+  // above the tile so it doesn't get clipped near the bottom of the
+  // viewport. The badge needs position: absolute, so the tile gets
+  // position: relative when the hint is active.
+  hintHighlight: {
+    position: "relative",
+    boxShadow: `inset 0 -${s(3)}px 0 rgba(0,0,0,0.12), 0 0 ${s(14)}px ${s(4)}px rgba(201,169,97,0.85), 0 ${s(2)}px ${s(4)}px rgba(0,0,0,0.35)`,
+    borderColor: gold,
+  },
+  hintBadge: {
+    position: "absolute", top: `-${s(20)}px`, left: "50%", transform: "translateX(-50%)",
+    fontSize: ts(10), color: gold, fontWeight: "bold", letterSpacing: 0.5,
+    textShadow: "0 1px 2px rgba(0,0,0,0.6)", whiteSpace: "nowrap", pointerEvents: "none",
+  },
+  // Menu checkbox-style toggle for training mode (spec §5.4).
+  menuToggleRow: { display: "flex", alignItems: "center", gap: s(10), justifyContent: "center", marginTop: s(6) },
+  menuToggleBtn: {
+    display: "inline-flex", alignItems: "center", gap: s(8),
+    background: "rgba(201,169,97,0.08)", border: `1px solid ${goldDim}`, color: green,
+    padding: `${s(6)}px ${s(14)}px`, borderRadius: s(6), cursor: "pointer", outline: "none",
+    fontSize: ts(13), letterSpacing: 0.5, transition: "all 0.15s",
+  },
+  menuToggleBtnActive: { background: "rgba(201,169,97,0.22)", borderColor: gold, color: gold },
+  menuToggleBox: {
+    display: "inline-block", width: s(14), height: s(14), borderRadius: s(3),
+    border: `1px solid ${goldDim}`, background: "transparent",
+    textAlign: "center", lineHeight: `${s(12)}px`, fontSize: ts(11), color: gold,
+  },
+  menuToggleBoxActive: { background: gold, color: bg, borderColor: gold },
   tileImg: { fontSize: s(60), lineHeight: 1, display: "block", marginBottom: s(8) },
   tileLabel: { fontSize: ts(9), color: "#5a4a2a", marginTop: 0, textTransform: "capitalize", whiteSpace: "nowrap" },
 
