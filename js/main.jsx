@@ -1324,12 +1324,18 @@ function MahjongGame() {
                 <span>{L.trainingModeLabel}</span>
               </button>
             </div>
-            {hasResumeSave && !gameStarted && (
+            {(gameStarted || hasResumeSave) && (
               <>
                 <div style={S.menuBtnRow}>
-                  <button tabIndex={-1} style={S.startBtn} onClick={resumeGame}>{L.resumeGame}</button>
+                  <button
+                    tabIndex={-1}
+                    style={S.startBtn}
+                    onClick={gameStarted ? () => setShowMenu(false) : resumeGame}
+                  >
+                    {L.resumeGame}
+                  </button>
                 </div>
-                <p style={S.resumeNote}>{L.resumeNote}</p>
+                {!gameStarted && <p style={S.resumeNote}>{L.resumeNote}</p>}
               </>
             )}
             <div style={S.menuBtnRow}>
