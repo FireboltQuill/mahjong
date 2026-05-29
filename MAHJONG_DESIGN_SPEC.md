@@ -1144,6 +1144,77 @@ Each kind has a fixed `ttl` (in milliseconds, written into `state.tileAnims[id].
 
 If `prefers-reduced-motion: reduce` is active (§10.7), no animations are pushed and the AI timer effectively becomes the only pacing source.
 
+#### 10.4.1 Reference CSS keyframes
+
+These are a working starting point — not a designer's final pass. They produce visible-but-restrained motion that matches the timing budget above. Tune translate distances and opacities to taste.
+
+```css
+/* tile-draw: brief fade + slide-in from above. Applied to the
+   element corresponding to state.tileAnims[id].kind === "draw". */
+@keyframes tile-draw {
+  0%   { opacity: 0; transform: translateY(-12px) scale(0.96); }
+  60%  { opacity: 1; transform: translateY(2px)   scale(1.02); }
+  100% { opacity: 1; transform: translateY(0)     scale(1);    }
+}
+
+/* claim-pop: scale overshoot with gold-flash overlay. The flash
+   is a sibling pseudo-element so it can fade independently. */
+@keyframes claim-pop {
+  0%   { transform: scale(0.8); }
+  55%  { transform: scale(1.10); }
+  100% { transform: scale(1);    }
+}
+@keyframes claim-flash {
+  0%   { opacity: 0;    background: rgba(255, 215, 100, 0); }
+  35%  { opacity: 0.85; background: rgba(255, 215, 100, 0.85); }
+  100% { opacity: 0;    background: rgba(255, 215, 100, 0); }
+}
+
+/* win-shimmer: diagonal gold sweep across the winning hand
+   container. Runs once per win, not per tile. */
+@keyframes win-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+.win-shimmer-container {
+  background-image: linear-gradient(
+    115deg,
+    transparent 25%,
+    rgba(255, 215, 100, 0.55) 50%,
+    transparent 75%
+  );
+  background-size: 200% 100%;
+  animation: win-shimmer 1400ms linear 1;
+}
+```
+
+**`discard` is FLIP, not a @keyframes block.** FLIP cannot be a CSS keyframe because the start and end positions are unknown until layout. The implementation pattern is:
+
+```js
+function flipDiscard(tileId, hintEl, poolEl) {
+  if (prefersReducedMotion()) return;
+  const first = hintEl.getBoundingClientRect();
+  // setState that moves the tile from hand to discard pool happens here,
+  // then on the next layout the discard-pool element exists:
+  requestAnimationFrame(() => {
+    const last = poolEl.getBoundingClientRect();
+    const dx = first.left - last.left;
+    const dy = first.top - last.top;
+    poolEl.animate(
+      [
+        { transform: `translate(${dx}px, ${dy}px) scale(${first.width / last.width})` },
+        { transform: "translate(0, 0) scale(1)" },
+      ],
+      { duration: 280, easing: "cubic-bezier(0.4, 0, 0.2, 1)", fill: "both" }
+    );
+  });
+}
+```
+
+Use the WAAPI (`Element.animate()`) rather than CSS transitions because the FLIP transform must be applied imperatively after the layout read. WAAPI's `fill: "both"` avoids the post-animation flicker that CSS transitions can produce.
+
+**Reduced-motion guard:** every animation path (CSS class application or `.animate()` call) must check `window.matchMedia("(prefers-reduced-motion: reduce)").matches` and skip if true. This is in addition to §10.7's "skip pushing animation state" rule — defense in depth, in case state was pushed before the media query was checked.
+
 ### 10.5 FLIP discard requirements
 
 Maintain a callback-ref map:
@@ -2011,69 +2082,286 @@ The `mahjong_training_mode` key is a single string (`"true"` or `"false"`) and r
 
 ## 19. Testing checklist
 
+This section specifies concrete test procedures, not just categories. Each test states inputs (where applicable), the action to perform, and the observable that confirms pass/fail. Tests can be run manually in DevTools or scripted; the spec doesn't prescribe a framework but the fixtures below are framework-agnostic.
+
 ### 19.1 Core gameplay regression
 
-- Start game.
-- Draw.
-- Discard.
-- Claim chi/peng/gang if available.
-- Win by zimo.
-- Win by dianpao.
-- Complete all rounds.
-- Start a new game.
+A scripted "happy path" round to detect engine regressions:
+
+1. Open menu; confirm `windRoundsSetting = 1`, `difficulty = "easy"`, language `"en"`.
+2. Click **Start Game**. Confirm: menu hides, dealer (seat 0) is human, `state.phase === "discard"`, `state.turnDrawn === true`, hand has 14 tiles, other seats have 13.
+3. Click any tile to select; click again to discard. Confirm: tile moves to discard pool, `state.phase === "claim"`, log entry appended.
+4. AI seats cycle through claim resolution and draws within ≈ 2 seconds (3 × 600ms timer). Confirm each AI's `processAIAction` runs (`currentTurn` advances; `phase` cycles `claim` → `draw` → `discard` → `claim`).
+5. Continue play until a Hu is reached or the wall exhausts. Confirm round-over modal with the expected tab (`winner` for Hu, "Draw exhausted" for exhaustion).
+6. Click **Next Round**. Confirm: dealer rotates to seat 1, round number increments, scores carry over.
+7. Complete all rounds. Confirm: round-over modal's button changes to "Game Summary"; clicking it sets `gameOverAcknowledged = true`.
+8. Click **Back to Menu**. Confirm: menu reopens with original settings retained.
+
+**Pass criterion:** all eight steps complete without exceptions and observable state matches.
 
 ### 19.2 Persistence
 
-- Refresh mid-round.
-- Refresh immediately after a discard.
-- Refresh immediately after using a hint — confirm `state.hintUsedThisGame === true` after restore, and confirm `purist` does **not** unlock on a subsequent same-game win.
-- Refresh on round-over modal.
-- Refresh on game summary.
-- Corrupt each structured localStorage key and confirm app recovers.
-- Bump schema versions and confirm old payloads are discarded.
-- Mutate a fallback object returned by `loadJson` and reload — confirm the next load returns a fresh default, not the mutated copy.
+#### 19.2.1 Refresh fixtures
+
+Each row describes a refresh point and what to verify after `window.location.reload()`:
+
+| Point | After reload, verify |
+|---|---|
+| Mid-round between draws and discards | Resume button is primary; clicking it restores hand counts, discards, current turn, scores; tile ids match pre-reload |
+| Immediately after a player discard (≤ 100ms) | Resume restores the post-discard state, including `phase: "claim"` and `lastDiscard` populated |
+| Immediately after using a hint | `state.hintUsedThisGame === true` after restore; complete the game without further hints; verify `purist` does **not** unlock on win |
+| On round-over modal | Resume restores to round-over state with same winner, scores, active tab |
+| On game-summary modal | No resume offered (save was cleared on `gameOverAcknowledged` → true). Menu shows only "Start Game" |
+| 600ms after a discard, then close-tab via DevTools | Reopen: resume restores the post-discard state; the `pagehide` handler wrote synchronously |
+
+#### 19.2.2 LocalStorage corruption fixtures
+
+Inject each corruption via DevTools console, reload, verify no crash and the affected feature uses defaults:
+
+| Key | Corruption | Expected |
+|---|---|---|
+| `mahjong_in_progress` | `localStorage.setItem('mahjong_in_progress', 'not json')` | Menu shows "Start Game" only; no user-visible error |
+| `mahjong_in_progress` | `localStorage.setItem('mahjong_in_progress', '{"v":99,"state":{}}')` | Version mismatch → fallback; menu shows "Start Game" only |
+| `mahjong_in_progress` | `localStorage.setItem('mahjong_in_progress', '{"v":1}')` (missing `state`) | Parsed but `shouldOfferResume` guard hides resume button; no crash |
+| `mahjong_lifetime_stats` | `localStorage.setItem('mahjong_lifetime_stats', '{')` (unterminated) | `loadJson` catches; stats modal shows defaults (zeros, extremums as "—") |
+| `mahjong_lifetime_stats` | `localStorage.setItem('mahjong_lifetime_stats', '{"v":1,"gamesPlayed":"banana"}')` | Bad value renders as 0/"—"; next game's merge corrects |
+| `mahjong_achievements` | `localStorage.setItem('mahjong_achievements', 'null')` | Fallback returned; all locked |
+| `mahjong_daily` | `localStorage.setItem('mahjong_daily', '{"v":1,"rulesVersion":1,"results":"not an object"}')` | `results` treated as `{}`; daily UI shows "never played" |
+| `mahjong_audio` | `localStorage.setItem('mahjong_audio', '{"v":1,"sfxVolume":99}')` | Volume clamped to [0, 1] at use site; settings menu reflects clamped value |
+| `mahjong_replays` | `localStorage.setItem('mahjong_replays', '{"v":1,"games":null}')` | Treated as empty; replay UI shows "no replays" |
+| `mahjong_last_announced` | `localStorage.setItem('mahjong_last_announced', '{"v":1,"gameId":"other"}')` | gameId mismatch → no SFX suppression; behaves as fresh game-over |
+
+For each row: paste the snippet, reload. Pass = app loads, no thrown errors in console (parse-warning logs OK), feature behaves as the "Expected" column.
+
+#### 19.2.3 Schema version bump
+
+For each versioned key, bump the version constant in code and reload with a v1 payload in storage:
+
+```js
+// Before: const RESUME_VERSION = 1;
+// After:  const RESUME_VERSION = 2;
+localStorage.setItem('mahjong_in_progress', '{"v":1,"state":{...}}');
+location.reload();
+```
+
+Pass = v1 payload discarded; menu shows "Start Game" with no resume; no crash.
+
+#### 19.2.4 Fallback mutation isolation
+
+```js
+const stats = loadJson('mahjong_lifetime_stats', 1, () => ({ ...DEFAULT_LIFETIME_STATS }));
+stats.gamesPlayed = 999;
+const reloaded = loadJson('mahjong_lifetime_stats', 1, () => ({ ...DEFAULT_LIFETIME_STATS }));
+console.assert(reloaded.gamesPlayed === 0, 'fallback mutation leaked');
+```
+
+Repeat with `() => DEFAULT_LIFETIME_STATS` (factory returning shared reference). Pass: both assertions hold because `resolveFallback` deep-clones (§4.2).
 
 ### 19.3 Determinism
 
-- Same seed creates same wall.
-- Same UTC daily date creates same wall.
-- Custom name groups do not affect daily wall.
-- Replay final state matches live final state.
+#### 19.3.1 Seed reproducibility
+
+```js
+const state = createInitialState(1, 'en', 0x12345678);
+const wallChecksum = state.wall.slice(0, 16).map(t => t.id).join(',');
+// Record on first run, commit to test fixture, assert thereafter.
+```
+
+Pass = byte-identical across reloads, browser profiles, and machines.
+
+#### 19.3.2 Daily UTC reproducibility
+
+Two fresh browser profiles, same UTC date window:
+
+1. Start daily in profile A; record `state.wall.map(t => t.id).join(',')`.
+2. Start daily in profile B; record the same.
+3. Compare.
+
+Pass = strings identical. Also record `state.personalities` and `state.playerNames` — personalities must match; names should also match (daily uses `DAILY_NAME_GROUPS` per §9.6).
+
+#### 19.3.3 Custom name groups do not perturb daily wall
+
+Profile A: edit name groups via menu to add a custom group. Profile B: defaults. Same UTC date, both start daily. Pass = wall identical, personalities identical; only displayed names per seat differ (and even those only if daily-mode name-group override isn't active per §9.7).
+
+#### 19.3.4 AI determinism scan (post Phase 5)
+
+```js
+const s1 = createInitialState(1, 'en', 0x12345678);
+const s2 = createInitialState(1, 'en', 0x12345678);
+let cur1 = s1, cur2 = s2;
+const trace1 = [], trace2 = [];
+for (let i = 0; i < 50 && !cur1.winner && !cur1.isDraw; i++) {
+  cur1 = processAIAction(cur1);
+  trace1.push({ phase: cur1.phase, turn: cur1.currentTurn, wall: cur1.wall.length });
+}
+for (let i = 0; i < 50 && !cur2.winner && !cur2.isDraw; i++) {
+  cur2 = processAIAction(cur2);
+  trace2.push({ phase: cur2.phase, turn: cur2.currentTurn, wall: cur2.wall.length });
+}
+console.assert(JSON.stringify(trace1) === JSON.stringify(trace2), 'AI determinism broken');
+```
+
+Pass = assertion holds. Empirically tests Appendix A.7.
+
+#### 19.3.5 Replay final state matches live final state
+
+```js
+const liveFinal = state;
+const { state: replayed, ok } = replayRound(
+  state.roundSeeds[state.roundNumber],
+  state.roundStartInfo,
+  state.actionLog,
+  state.actionLog.length - 1,
+  langRef.current
+);
+console.assert(ok === true);
+const omitFields = ['log', 'persistRev', 'tileAnims', 'aiReactions', 'actionLog'];
+function omit(o) { const c = {...o}; for (const f of omitFields) delete c[f]; return c; }
+console.assert(
+  JSON.stringify(omit(liveFinal)) === JSON.stringify(omit(replayed)),
+  'live and replay diverge'
+);
+```
+
+Pass = both assertions hold for every completed round in the 19.1 happy-path run.
 
 ### 19.4 UI and accessibility
 
-- 360×640 viewport.
-- Keyboard-only menu navigation.
-- Keyboard-only modal navigation.
-- Reduced-motion OS setting.
-- Audio muted state.
-- Replay controls via keyboard.
+#### 19.4.1 360×640 viewport
+
+In DevTools device toolbar, select 360×640:
+
+| Element | Constraint |
+|---|---|
+| Player hand (14 tiles) | All tiles visible without horizontal scroll; tile width ≥ 22px |
+| Hint `↑ best` tag | Visible *above* highlighted tile, not clipped by viewport top |
+| Discard pool | Scrolls horizontally if any seat has > 8 discards; latest-discard badge always visible |
+| Round-over modal tab bar | Three tabs visible OR horizontally scrollable; no off-screen overflow |
+| Game-summary modal | Standings rows fit without horizontal scroll |
+| Toast | Anchored top; does not cover the bottom action bar |
+| Claim banner | Above player hand; does not push hand off-screen |
+
+#### 19.4.2 Keyboard-only navigation
+
+Open menu with mouse, then operate via Tab/Enter/Esc only:
+
+| Sequence | Expected |
+|---|---|
+| `Tab` × 6 from initial focus | Cycles wind buttons → difficulty buttons → Start Game → Lang Toggle → How To Play → Manage Names → Admin |
+| `Enter` on Start Game | Starts a game |
+| `Tab` in game (turn = human draw) | Reaches the Draw button |
+| `Enter` on Draw | Draws a tile |
+| `Tab` after draw | Cycles hand tiles |
+| `Enter` on a hand tile twice | First selects, second discards |
+| `Tab` then `Enter` on Hu when valid | Declares Hu |
+| `Esc` on any modal | Closes the modal |
+
+`Esc`-to-close is not currently implemented (`main.jsx` modal overlays don't bind `keydown`). Phase 4 deliverable for §16.1 compliance — test fails until then.
+
+#### 19.4.3 Reduced motion
+
+Enable OS "Reduce motion" setting (macOS: System Settings → Accessibility → Display; Windows: Settings → Accessibility → Visual effects). Reload. Pass = no tile slide-ins, no claim-pop, no win-shimmer; round-over tab transitions instant; AI auto-play still advances at 600ms (timing not affected, only visuals).
+
+#### 19.4.4 Audio muted state
+
+Toggle SFX off via menu. Play a full round. Pass = no audio. Toggle on; play another action. Pass = SFX resumes. Same for music.
 
 ### 19.5 Edge cases
 
-- Admin apply twice in one round; no tile ID collision.
-- Draw then immediately discard same tile; animation cleanup remains correct.
-- Multiple achievements unlock at once; toasts queue correctly.
-- Resume after round-over; SFX does not replay.
-- Resume inside debounce-loss window; no duplicate resolution SFX.
-- Replay current round before any completed round exists.
+| Scenario | Steps | Pass criterion |
+|---|---|---|
+| Admin apply twice in one round | Open admin from in-game; modify hand; apply. Reopen; modify wall; apply | No tile ID collision; both applies produce coherent state; `state.adminTouched === true` after either |
+| Draw then immediately discard same tile | Configure player draw + discard within 50ms via test hook | Both animations complete; discard reaches final pool position; no orphan timer |
+| Multiple achievements at once | Pre-set lifetime stats so next game-over triggers `wins_10`, `wins_50`, `streak_5` | Three toasts queue sequentially (~2.5s each); first toast doesn't preempt; toasts above modal |
+| Resume after round-over, no SFX | Win a round; let modal render and SFX fire; reload | Modal restores; no SFX on restore (Case A §12.6) |
+| Resume inside debounce window | Win; within 500ms close tab via DevTools; reopen | At most one resolution SFX across close-and-reopen (Case B side-channel) |
+| Replay current round before completion | Mid-round, attempt to open replay UI via debug entry | Replay tab hidden OR shows "round in progress" placeholder |
+| Wall exhaustion on discard | Force wall length 0; AI discards; no claim | `isDraw: true`; no `declare_hu`; "Draw exhausted" modal |
+| Concealed gang on last wall tile | Force state: AI draws last wall tile completing concealed gang | Gang replacement draw fails (wall empty); round ends `isDraw: true`; no Hu on the gang |
 
 ### 19.6 Daily challenge regression
 
-- Same UTC date produces the same initial wall in two fresh browser profiles.
-- Local custom names do not change wall order.
-- Local custom names do not change AI gameplay decisions in daily mode.
-- First recorded daily result is preserved after a non-recording replay/play-again run.
-- Daily win streak uses explicit `won` values from `mahjong_daily`.
-- Starting a daily at 23:55 UTC and finishing past 00:05 UTC writes the result under the starting date's key, not the rollover date.
+| Scenario | Pass criterion |
+|---|---|
+| Same UTC date → same wall (two profiles) | `state.wall` byte-identical between A and B |
+| Custom name groups don't change wall | A custom, B default — wall identical |
+| Custom name groups don't change AI decisions | A custom, B default — 50-action trace identical (via 19.3.4 procedure) |
+| First recorded result preserved through replay | Play daily, record result. "Play again" non-recording with different outcome. Reload; `mahjong_daily.results[today]` is the original |
+| Daily streak uses `won` flag | DevTools-edit `mahjong_daily.results` with 6 days `won: true`; play today and win; verify `daily_win_streak_7` unlocks |
+| 23:55 UTC daily under starting-date key | Start at 23:55 UTC; advance clock past 00:00 UTC; finish; result lands under starting date's key. `state.dailyDate` unchanged |
+| `rulesVersion` mismatch excludes from streak | Edit one day's `rulesVersion: 0`; streak breaks at that day even if `won: true` |
 
 ### 19.7 Replay regression
 
-- Replaying a round does not call AI decision helpers.
-- Replaying a round validates `expectedTileId` where practical.
-- Human pass decisions and AI choices are represented in the action log.
-- Replay final state matches the original resolved round state.
-- `mahjong_replays` write degrades to dropping the oldest game when quota is exceeded.
+| Scenario | Pass criterion |
+|---|---|
+| Replay from action 0 to final | `ok: true`; state matches live (per 19.3.5) |
+| Replay doesn't call AI helpers | Monkey-patch `aiChooseDiscard` and `aiDecideClaim` to throw; replay runs through without throw |
+| `expectedTileId` validation | Corrupt one `draw` action's `expectedTileId`; replay returns `ok: false` with `lastGoodIdx` pointing to action before corruption |
+| Mid-scrub error UX | Same corruption via timeline UI; scrubber clamps at `lastGoodIdx`; banner appears |
+| Admin-touched match excluded | Modify state via admin once; complete match; replay tab hidden or "unavailable" placeholder |
+| Replay UI fits 360×640 | Mini-board, timeline, prev/play/next all visible and operable |
+| Quota fallback | Inject 9 max-size replay games; play 10th; oldest dropped on persist. Inject 10; play 11th; oldest dropped (and 11th-from-top if still over quota) |
+| Pre-Feature-5 saves discarded | Set `mahjong_in_progress` to v1 with random base-36 tile ids; reload after Feature 5 ships; save discarded, no resume |
+
+### 19.8 React Strict Mode regression
+
+Strict Mode (main.jsx:1717) is enabled in dev. Run 19.1 + 19.2 + 19.5 **in dev mode** (Strict Mode active) and verify:
+
+| Behaviour | Pass criterion |
+|---|---|
+| Round-over SFX | Fires exactly once per round end — §12.6.2 |
+| `roundResults` effect | Each round adds exactly one entry to `state.roundResults` (the dedup guard at main.jsx:96–98 holds under double-invocation) |
+| Game-over lifetime merge | `gamesPlayed` increments by exactly 1; `lifetimeUpdatedFor === state.gameId` short-circuits the second invocation |
+| Achievement toast | Each unlock produces exactly one toast |
+| Side-channel consumption | `mahjong_last_announced` is read-and-cleared idempotently; the second Strict-Mode run sees an empty side-channel |
+| `stateRef.current` | After double-mount, `stateRef.current === state`; the ungated effect at §6.7 runs every render |
+
+### 19.9 Storage budget regression
+
+Pre-fill localStorage near quota and verify graceful degradation:
+
+```js
+for (let i = 0; i < 80; i++) {
+  localStorage.setItem(`junk_${i}`, 'x'.repeat(50_000));  // ~4 MB
+}
+```
+
+Play a game; trigger replay persistence at round end. Pass criteria:
+
+1. Replay save retries with progressively-shorter `games` list per §14.5.1.
+2. Resume save and lifetime writes continue to succeed even if replay writes ultimately fail.
+3. One console warning logged when replay starves; no warning storm.
+
+### 19.10 Acceptance criteria coverage map
+
+For every acceptance criterion across §5–§14, this table indicates which test covers it. A criterion with no row is a gap; flag in PR review.
+
+| §-criterion | Test |
+|---|---|
+| §5.6 training mode default off | 19.1 + reload |
+| §5.6 hint button only during valid window | 19.4.2 Tab to Hint when invalid — button not focusable |
+| §6.10 refresh mid-round restores | 19.2.1 row 1 |
+| §6.10 refresh on round-over restores | 19.2.1 row 4 |
+| §6.10 corrupt save discarded | 19.2.2 (every row) |
+| §6.10 close-tab loses at-most-one action | 19.2.1 row 6 |
+| §6.10 lifecycle after clear-trigger | Implicit in 19.2.1 row 5 |
+| §7.7 stats survive refresh | Implicit in 19.1 + reload |
+| §7.7 stats update once per game | 19.8 "Game-over lifetime merge" |
+| §7.7 reset doesn't remove achievements | Manual: reset stats; `mahjong_achievements` unchanged |
+| §8.9 achievements persist | Reload + check `mahjong_achievements` |
+| §8.9 unlocked don't re-toast | Reload after unlock; no toast on open |
+| §8.9 `purist` excludes daily | 19.6 "Custom name groups don't change AI" + daily play + verify no purist |
+| §9.12 same UTC same wall | 19.3.2 |
+| §9.12 custom names don't affect wall | 19.3.3 |
+| §10.8 reduced motion skips animations | 19.4.3 |
+| §11.6 reactions expire reliably | Manual: trigger reaction, wait 5s, verify gone |
+| §12.8 audio gated on user gesture | Manual: open app, listen for autoplay (silent) |
+| §12.8 refresh on round-over no replay SFX | 19.5 "Resume after round-over" |
+| §13.7 step functions callable without React | 19.3.5 (replay uses bare step functions) |
+| §14.9 replay matches live final state | 19.3.5 |
+| §14.9 replay does not play SFX | 19.7 + manual audio check |
+| §14.9 quota fallback | 19.9 |
 
 ---
 
@@ -2413,7 +2701,98 @@ This is the hottest single setState merge — it can fire on the same tick the h
 
 ---
 
-## Appendix C: Phase ordering checklist
+## Appendix C: Dry-run trace — one round through the action log + replay pipeline
+
+This appendix walks a single short round from `initRound` through round-end, recording every action in the log and showing that replay from seed reproduces the same state. The trace validates the §13.6 schemas concretely.
+
+**Scenario.** A 1-wind-rounds game, round 1, seeded with `matchSeed = 0x12345678`. Round seed via §9.5: `seedForRound(0x12345678, 1) = 0x9B27A1E5` (illustrative; the actual value is whatever `seedForRound` returns at implementation time — the point of the trace is the *structure*, not the specific hex). Dealer is seat 0 (the human). Difficulty `expert`, no daily mode, no admin touches.
+
+**Initial state after `initRound(roundStartInfo, "en", 0x9B27A1E5)`:**
+
+```js
+state = {
+  ...roundStartInfo,         // gameId, matchSeed, scores [100,100,100,100], etc.
+  roundSeeds: { 1: 0x9B27A1E5 },
+  players: [
+    { hand: [14 sorted tiles from deck head], openMelds: [], discards: [], seatWind: "east" },
+    { hand: [13 tiles], openMelds: [], discards: [], seatWind: "south" },
+    { hand: [13 tiles], openMelds: [], discards: [], seatWind: "west" },
+    { hand: [13 tiles], openMelds: [], discards: [], seatWind: "north" },
+  ],
+  wall: [83 remaining tiles],  // 136 - 4*13 - 1 dealer extra
+  currentTurn: 0,
+  phase: "discard",
+  turnDrawn: true,
+  lastDiscard: null, lastDiscarder: null, lastDrawn: null,
+  winner: null, winInfo: null, scoreBreakdown: null, isDraw: false,
+  actionLog: [],
+  log: [logRoundBegin(1, "East")],
+  persistRev: 0,
+}
+```
+
+The dealer's 14th tile (the "first draw") is **not** in the action log — it's part of the initial deal, reproducible from `roundSeed`. The action log begins with action 0 = dealer's first discard.
+
+### Action sequence
+
+For brevity, tile ids in this trace are written as `"57"` (decimal string per §9.4). The illustrative values are not real wall positions; the structure is what matters.
+
+| Idx | Action | Effect on state |
+|---:|---|---|
+| 0 | `{ type: "discard", seat: 0, tileId: "57" }` | Removes tile "57" from human's hand; appends to `players[0].discards`; sets `lastDiscard = tile57`, `lastDiscarder = 0`; transitions `phase: "claim"`, `turnDrawn: false`, `playerDeclinedClaims: []` |
+| 1 | `{ type: "resolve_pass" }` | No one claimed tile57. Transitions `phase: "draw"`, `currentTurn: 1` (next seat), clears `lastDiscard`/`lastDiscarder`/`playerDeclinedClaims` |
+| 2 | `{ type: "draw", seat: 1, expectedTileId: "12" }` | Pops `wall[0]` (which is tile "12"); appends to `players[1].hand`; `phase: "discard"`, `turnDrawn: true`, `lastDrawn = tile12` |
+| 3 | `{ type: "discard", seat: 1, tileId: "08" }` | Removes tile "08"; appends to `players[1].discards`; `phase: "claim"`, `turnDrawn: false` |
+| 4 | `{ type: "claim", seat: 2, claimType: "chi", discarder: 1, claimedTileId: "08", handTileIds: ["09", "10"], resultingMeldTileIds: ["08", "09", "10"] }` | West (seat 2) claims chi. Wait — chi is left-neighbor only; seat 2 is south's left only if turn order is east→south→west→north. South discarded, west is next, so west *can* chi. Moves tiles "09" and "10" from seat 2's hand into a new open meld `{type: "chi", tiles: [t08, t09, t10], claimed: true}`. Removes tile "08" from seat 1's discards. Sets `currentTurn: 2`, `phase: "discard"`, `turnDrawn: true` |
+| 5 | `{ type: "discard", seat: 2, tileId: "44" }` | Standard discard |
+| 6 | `{ type: "resolve_pass" }` | No claim |
+| 7 | `{ type: "draw", seat: 3, expectedTileId: "71" }` | North draws |
+| 8 | `{ type: "declare_gang", seat: 3, tileKey: "characters_5", source: "concealed", tileIds: ["71", "23", "24", "25"], expectedReplacementTileId: "99" }` | North had three 5-characters tiles and just drew the fourth. Removes all four, adds concealed meld, pops `wall[0]` ("99") as replacement, updates `lastDrawn`. `phase` stays `discard` because replacement satisfies the 14-tile invariant |
+| 9 | `{ type: "discard", seat: 3, tileId: "99" }` | North discards the replacement (no Hu) |
+| 10 | `{ type: "declare_hu", seat: 0, winningTileId: "99", discarder: 3, expectedWinType: "dianpao", expectedLargeHu: false, expectedSevenPairs: false }` | Human Hu by claim on tile "99". `applyWin` runs: `winInfo = {type: "dianpao", winningTile: t99, discarder: 3, sevenPairs: false, largeHu: false}`. `scoreBreakdown` is computed via §scoring.jsx:47; deltas applied to `scores`. `winner: 0`, round ends |
+
+### Replay verification
+
+Calling `replayRound(0x9B27A1E5, roundStartInfo, actionLog, 10, "en")` should produce a state byte-equivalent to the live state at the end of action 10, with the caveats:
+
+1. **`log` (human-readable) will differ.** Replay does not emit log entries (§14.7). Compare on every state field *except* `log`.
+2. **`actionLog` will be identical.** Replay does not append (the actions came in as input).
+3. **`persistRev` will be 0.** Replay never bumps persistRev (it's a live-game concept).
+4. **`tileAnims` and `aiReactions` will be `{}`.** Replay does not push UI effects.
+
+For all other fields — `players`, `wall`, `currentTurn`, `phase`, `winner`, `winInfo`, `scoreBreakdown`, `scores`, `roundResults` — the values must match exactly. This is the §14.9 acceptance criterion "Replay result at final action matches the live final round state."
+
+### Validation budget per action
+
+Each `expected*` field is checked at the point listed below. If any check fails, `stepXxx` throws `ReplayMismatchError({ at, expected, got })`.
+
+| Field | Checked in | Compared against |
+|---|---|---|
+| `draw.expectedTileId` | `stepDraw` | `state.wall[0].id` before pop |
+| `declare_gang.expectedReplacementTileId` | `stepDeclareGang` | `state.wall[0].id` before replacement pop |
+| `declare_hu.expectedWinType` | `stepDeclareHu` | derived `winInfo.type` from `buildWinInfo` |
+| `declare_hu.expectedLargeHu` | `stepDeclareHu` | derived `winInfo.largeHu` |
+| `declare_hu.expectedSevenPairs` | `stepDeclareHu` | derived `winInfo.sevenPairs` |
+| `discard.tileId` | `stepDiscard` (not "expected" — load-bearing) | must be present in `players[seat].hand`; throws `InvalidActionError` if absent |
+| `claim.handTileIds`, `claimedTileId`, `discarder` | `stepClaim` | hand and discard pool consistency checks |
+| `declare_gang.tileIds`, `handTileIds`, `claimedTileId`, `discarder` | `stepDeclareGang` | same as claim |
+
+`discard.tileId`, `claim.handTileIds`, and `declare_gang.tileIds` are not "expected" because they are not redundant with engine derivation — they are the action's input, not its output. Replay does not validate them against a recomputed alternative; it uses them directly.
+
+### Edge-case actions not in this trace
+
+The trace doesn't cover every action shape. Other valid action sequences:
+
+- **Zimo Hu after concealed gang replacement.** Action sequence: `draw` → `declare_gang(concealed)` → `declare_hu(zimo)`. The Hu's `winningTileId` is the gang's `expectedReplacementTileId`.
+- **Wall exhaustion draw.** Action sequence ends with the last `discard`/`resolve_pass`; replay engine detects `state.wall.length === 0` and stops without a `declare_hu`. `isDraw: true`.
+- **Multi-decline chi+peng on one discard.** If seat 2 had both chi and peng on the discard and the human had right-neighbor peng, sequence is: `discard` → (engine internal: prompts human peng, human declines) → (prompts seat 2 chi, AI takes) → `claim(chi)`. The human's decline is **not** logged.
+- **AI Hu over chi.** Multiple seats can act on one discard; the engine resolves by priority Hu > Gang > Peng > Chi. Only the winning action gets logged.
+
+These are not appendix entries — they're exhausted by the same schemas above. The trace's purpose is to anchor what an action sequence looks like end-to-end.
+
+---
+
+## Appendix D: Phase ordering checklist
 
 A condensed map of cross-phase touches that get easy to forget. Every time a phase ships, scan this list for "retroactive" edits.
 
