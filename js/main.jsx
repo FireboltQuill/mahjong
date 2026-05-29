@@ -42,6 +42,20 @@ function MahjongGame() {
   const diffRef = useRef(difficulty);
   diffRef.current = difficulty;
 
+  // Resume in-progress (spec §6). gameStarted gates the save effect so
+  // the throwaway initial state created by useState above is never
+  // written to localStorage. hasResumeSave drives the menu UI. The refs
+  // are accessed from lifecycle handlers and the debounced save effect.
+  const [gameStarted, setGameStarted] = useState(false);
+  const [hasResumeSave, setHasResumeSave] = useState(() => {
+    const save = loadJson("mahjong_in_progress", 1, null);
+    return save !== null;
+  });
+  const stateRef = useRef(state);
+  const saveTimerRef = useRef(null);
+  const flushSaveRef = useRef(() => {});
+  const resumeClearedRef = useRef(false);
+
   // Localization helpers
   const L = LANG[lang];
   const TN = (t) => L.tileName(t);
@@ -93,6 +107,100 @@ function MahjongGame() {
   useEffect(() => {
     setHintIdx(null);
   }, [state.phase, state.currentTurn, state.turnDrawn]);
+
+  // ============================================================
+  // RESUME IN-PROGRESS (spec §6)
+  // ============================================================
+
+  // §6.5 — produce the slim payload written to localStorage. Drops UI-
+  // ephemeral fields (none today; tileAnims/aiReactions will be dropped
+  // here once Phase 6/7 land). Trims the human-readable log to the last
+  // 50 lines.
+  function slimState(st) {
+    const slim = { ...st };
+    slim.log = (st.log || []).slice(-50);
+    delete slim.tileAnims;     // Phase 6 (no-op until then)
+    delete slim.aiReactions;   // Phase 7 (no-op until then)
+    return slim;
+  }
+
+  // §6.7 — predicate that decides whether the current state should be
+  // persisted. Closes over gameStarted (the throwaway-gate),
+  // gameOverAcknowledged (terminal), and the cleared-ref guard.
+  function shouldPersistResume() {
+    if (!gameStarted) return false;
+    if (resumeClearedRef.current) return false;
+    if (gameOverAcknowledged) return false;
+    if (!stateRef.current?.gameId) return false;
+    return true;
+  }
+
+  // §6.7 — synchronous write/remove. Called from the debounced save
+  // effect and from lifecycle handlers (unconditional). Reads state via
+  // stateRef so lifecycle handlers see the latest value, never the
+  // closure value from when listeners were attached.
+  function flushSave() {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    if (!gameStarted) return;  // throwaway-state guard; do not touch storage
+    if (!shouldPersistResume()) {
+      removeStorageKey("mahjong_in_progress");
+      return;
+    }
+    saveJson("mahjong_in_progress", {
+      v: 1,
+      state: slimState(stateRef.current),
+      lang: langRef.current,
+      difficulty: diffRef.current,
+      windRoundsSetting,
+      trainingMode,
+    });
+  }
+
+  // §6.7 stateRef sync — runs every render, no dep array. Without this,
+  // flushSave called from a lifecycle handler reads a stale state.
+  useEffect(() => { stateRef.current = state; });
+
+  // flushSaveRef tracks the latest closure of flushSave so the
+  // mount-only lifecycle effect below can call the current version.
+  useEffect(() => { flushSaveRef.current = flushSave; });
+
+  // §6.6 debounced save. Skips when gameStarted is false (throwaway
+  // state at mount). The 500ms trailing timeout coalesces rapid state
+  // changes; lifecycle handlers flush synchronously regardless.
+  useEffect(() => {
+    if (!gameStarted) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      flushSaveRef.current();
+      saveTimerRef.current = null;
+    }, 500);
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+    };
+  }, [state.persistRev, showMenu, gameOverAcknowledged, gameStarted, lang, difficulty, windRoundsSetting, trainingMode]);
+
+  // §6.7 lifecycle flush. Mount-only effect; handlers call flushSaveRef
+  // which always points at the latest closure. Unconditional — see the
+  // close-race walkthrough in §6.7 for why we don't gate on
+  // saveTimerRef being non-null.
+  useEffect(() => {
+    function handler() { flushSaveRef.current(); }
+    function visHandler() { if (document.hidden) flushSaveRef.current(); }
+    window.addEventListener("beforeunload", handler);
+    window.addEventListener("pagehide", handler);
+    document.addEventListener("visibilitychange", visHandler);
+    return () => {
+      window.removeEventListener("beforeunload", handler);
+      window.removeEventListener("pagehide", handler);
+      document.removeEventListener("visibilitychange", visHandler);
+    };
+  }, []);
 
   // Dynamic styles based on viewport
   const S = useMemo(() => makeStyles(winSize.w, winSize.h), [winSize.w, winSize.h]);
@@ -148,7 +256,7 @@ function MahjongGame() {
             largeHu: false,
             isDraw: true,
           };
-      return { ...prev, roundResults: [...prev.roundResults, result] };
+      return { ...prev, roundResults: [...prev.roundResults, result], persistRev: prev.persistRev + 1 };
     });
   }, [state.winner, state.isDraw, state.roundNumber]);
 
@@ -160,7 +268,13 @@ function MahjongGame() {
     if (state.currentTurn === PLAYER_IDX && state.phase === "draw") return;
 
     const timer = setTimeout(() => {
-      setState((prev) => processAIAction(prev));
+      // Identity check: processAIAction returns prev unchanged on guard
+      // failures (winner/isDraw/human turn) and a new object on every
+      // mutation path. Bump persistRev only when state actually changed.
+      setState((prev) => {
+        const next = processAIAction(prev);
+        return next === prev ? prev : { ...next, persistRev: prev.persistRev + 1 };
+      });
     }, 600);
     return () => clearTimeout(timer);
   }, [state.currentTurn, state.phase, state.turnDrawn, state.winner, state.isDraw, showMenu, state.awaitingPlayerClaim]);
@@ -426,7 +540,7 @@ function MahjongGame() {
     setState((prev) => {
       if (prev.currentTurn !== PLAYER_IDX || prev.phase !== "draw") return prev;
       if (prev.wall.length === 0) {
-        return { ...prev, isDraw: true, log: [...prev.log, _L().logExhaust] };
+        return { ...prev, isDraw: true, log: [...prev.log, _L().logExhaust], persistRev: prev.persistRev + 1 };
       }
       const tile = prev.wall[0];
       const newWall = prev.wall.slice(1);
@@ -441,6 +555,7 @@ function MahjongGame() {
         turnDrawn: true,
         lastDrawn: tile,
         log: [...prev.log, _L().logYouDraw(_TN(tile))],
+        persistRev: prev.persistRev + 1,
       };
 
       if (validateHu(newSt.players[PLAYER_IDX])) {
@@ -470,6 +585,7 @@ function MahjongGame() {
         turnDrawn: false,
         playerDeclinedClaims: [],
         log: [...prev.log, _L().logYouDiscard(_TN(discarded))],
+        persistRev: prev.persistRev + 1,
       };
     });
     setSelectedTileIdx(null);
@@ -484,9 +600,9 @@ function MahjongGame() {
         // the winning tile. Fall back to the latest hand tile if unset.
         const winTile = prev.lastDrawn || player.hand[player.hand.length - 1];
         const won = applyWin(prev, PLAYER_IDX, winTile, "zimo", null);
-        return { ...won, log: [...won.log, _L().logYouHu] };
+        return { ...won, log: [...won.log, _L().logYouHu], persistRev: prev.persistRev + 1 };
       }
-      return { ...prev, log: [...prev.log, _L().logBadHu] };
+      return { ...prev, log: [...prev.log, _L().logBadHu], persistRev: prev.persistRev + 1 };
     });
   }
 
@@ -499,7 +615,7 @@ function MahjongGame() {
       const newMelds = [...player.openMelds, meld];
 
       if (prev.wall.length === 0) {
-        return { ...prev, isDraw: true, log: [...prev.log, _L().logExhaust] };
+        return { ...prev, isDraw: true, log: [...prev.log, _L().logExhaust], persistRev: prev.persistRev + 1 };
       }
       const replacement = prev.wall[0];
       const afterWall = prev.wall.slice(1);
@@ -513,6 +629,7 @@ function MahjongGame() {
         wall: afterWall,
         lastDrawn: replacement,
         log: [...prev.log, _L().logYouGang(_TN(tiles[0]))],
+        persistRev: prev.persistRev + 1,
       };
     });
   }
@@ -533,7 +650,7 @@ function MahjongGame() {
     );
     setHintIdx(idx);
     if (!state.hintUsedThisGame) {
-      setState((prev) => prev.hintUsedThisGame ? prev : { ...prev, hintUsedThisGame: true });
+      setState((prev) => prev.hintUsedThisGame ? prev : { ...prev, hintUsedThisGame: true, persistRev: prev.persistRev + 1 });
     }
   }
 
@@ -541,24 +658,32 @@ function MahjongGame() {
     setState((prev) => {
       if (!prev.awaitingPlayerClaim) return prev;
       const claim = prev.awaitingPlayerClaim;
+      let next;
       if (accept) {
         const claimObj = {
           type: claim.type,
           playerIdx: claim.playerIdx,
           option: option || claim.option,
         };
-        return executeClaim({ ...prev, playerDeclinedClaims: [] }, claimObj);
+        next = executeClaim({ ...prev, playerDeclinedClaims: [] }, claimObj);
       } else {
         // Player declined — record it and continue resolving
         const declined = [...(prev.playerDeclinedClaims || []), claim.type];
         const newSt = { ...prev, awaitingPlayerClaim: null, playerDeclinedClaims: declined };
-        return resolveClaims(newSt);
+        next = resolveClaims(newSt);
       }
+      // Identity check matches the AI auto-play wrapper at line ~270.
+      return next === prev ? prev : { ...next, persistRev: prev.persistRev + 1 };
     });
     setClaimOptions(null);
   }
 
   function startNewGame() {
+    // Spec §6.8 — Start Game from any menu path discards the prior save.
+    removeStorageKey("mahjong_in_progress");
+    setHasResumeSave(false);
+    setHintIdx(null);
+    resumeClearedRef.current = false;
     setState(createInitialState(windRoundsSetting, langRef.current));
     setShowMenu(false);
     setSelectedTileIdx(null);
@@ -566,6 +691,30 @@ function MahjongGame() {
     setRoundOverTab("winner");
     setGameOverTab("standings");
     setGameOverAcknowledged(false);
+    setGameStarted(true);
+  }
+
+  // Spec §6.9 — Resume restores the saved game's state and settings,
+  // discarding any in-menu settings changes. Called from the menu's
+  // Resume Game button. After this, the save effect resumes normally.
+  function resumeGame() {
+    const save = loadJson("mahjong_in_progress", 1, null);
+    if (!save || !save.state) return;
+    resumeClearedRef.current = false;
+    setHintIdx(null);
+    setState(save.state);
+    if (save.lang) setLang(save.lang);
+    if (save.difficulty) setDifficulty(save.difficulty);
+    if (save.windRoundsSetting) setWindRoundsSetting(save.windRoundsSetting);
+    if (typeof save.trainingMode === "boolean") setTrainingMode(save.trainingMode);
+    setShowMenu(false);
+    setSelectedTileIdx(null);
+    setClaimOptions(null);
+    setRoundOverTab("winner");
+    setGameOverTab("standings");
+    setGameOverAcknowledged(false);
+    setHasResumeSave(false);
+    setGameStarted(true);
   }
 
   // Name group editor: mutations also persist to localStorage.
@@ -681,6 +830,11 @@ function MahjongGame() {
         winInfo: null,
         scoreBreakdown: null,
         isDraw: false,
+        // Spec §6.2 — once any admin edit lands, the action log can no
+        // longer faithfully reconstruct the match. Replay (§14.8) excludes
+        // adminTouched matches; this flag survives resume saves.
+        adminTouched: true,
+        persistRev: prev.persistRev + 1,
       };
     });
     setShowAdmin(false);
@@ -688,6 +842,11 @@ function MahjongGame() {
   // Menu admin entry: start a normal game and open admin so the user can
   // overwrite the initial state.
   function startWithAdmin() {
+    // Same clear-prior-save semantics as startNewGame (§6.8).
+    removeStorageKey("mahjong_in_progress");
+    setHasResumeSave(false);
+    setHintIdx(null);
+    resumeClearedRef.current = false;
     const initialState = createInitialState(windRoundsSetting, langRef.current);
     setState(initialState);
     setShowMenu(false);
@@ -696,6 +855,7 @@ function MahjongGame() {
     setRoundOverTab("winner");
     setGameOverTab("standings");
     setGameOverAcknowledged(false);
+    setGameStarted(true);
     openAdmin(initialState);
   }
 
@@ -704,16 +864,19 @@ function MahjongGame() {
       const newDealer = (prev.dealer + 1) % 4;
       const roundNum = prev.roundNumber + 1;
       if (roundNum > prev.totalRounds) {
-        return { ...prev, log: [...prev.log, _L().logOver] };
+        return { ...prev, log: [...prev.log, _L().logOver], persistRev: prev.persistRev + 1 };
       }
       const windIdx = Math.floor((roundNum - 1) / 4);
       const newRoundWind = SEAT_WINDS[windIdx] || "east";
-      return initRound({
+      // initRound returns {...gameInfo, ...overrides}, so persistRev
+      // from the spread is the prev value; bump on top of the result.
+      const next = initRound({
         ...prev,
         dealer: newDealer,
         roundWind: newRoundWind,
         roundNumber: roundNum,
       }, langRef.current);
+      return { ...next, persistRev: prev.persistRev + 1 };
     });
   }
 
@@ -1161,6 +1324,14 @@ function MahjongGame() {
                 <span>{L.trainingModeLabel}</span>
               </button>
             </div>
+            {hasResumeSave && !gameStarted && (
+              <>
+                <div style={S.menuBtnRow}>
+                  <button tabIndex={-1} style={S.startBtn} onClick={resumeGame}>{L.resumeGame}</button>
+                </div>
+                <p style={S.resumeNote}>{L.resumeNote}</p>
+              </>
+            )}
             <div style={S.menuBtnRow}>
               <button tabIndex={-1} style={S.startBtn} onClick={startNewGame}>{L.startGame}</button>
               <button tabIndex={-1} style={S.langBtn} onClick={() => setLang(lang === "en" ? "zh" : "en")}>{L.langToggle}</button>

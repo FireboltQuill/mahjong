@@ -348,6 +348,10 @@ function makeStyles(vw, vh) {
     textAlign: "center", lineHeight: `${s(12)}px`, fontSize: ts(11), color: gold,
   },
   menuToggleBoxActive: { background: gold, color: bg, borderColor: gold },
+  resumeNote: {
+    color: greenDim, fontSize: ts(11), textAlign: "center",
+    marginTop: s(4), letterSpacing: 0.5, fontStyle: "italic",
+  },
   tileImg: { fontSize: s(60), lineHeight: 1, display: "block", marginBottom: s(8) },
   tileLabel: { fontSize: ts(9), color: "#5a4a2a", marginTop: 0, textTransform: "capitalize", whiteSpace: "nowrap" },
 
