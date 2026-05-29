@@ -41,6 +41,19 @@ The following are intentionally out of scope for this improvement pass:
 - A bundler/module migration. The current ordered script-tag architecture remains in place.
 - New Mahjong rulesets beyond the existing app rules.
 
+### 1.2 Web-first; mobile deferred
+
+This improvement pass targets **desktop web browsers** (Chrome, Firefox, Safari, Edge) on laptop / desktop viewports. Mobile and iOS-specific behaviour is **deferred** — guidance is preserved inline (and consolidated in Appendix E) so a future mobile pass has the playbook ready, but mobile is not blocking for any feature in this pass.
+
+What this means in practice:
+
+- **Acceptance criteria** that mention mobile-only viewports or iOS-specific lifecycle quirks are tagged **(deferred)** and skipped at PR review.
+- **Tests** in §19 that target 360×640 viewports or iOS Safari behaviours are moved to §19.11 (deferred section).
+- **Defensive coding** that protects against mobile-only failure modes (iOS audio autoplay unlock, iOS Safari aggressive eviction) is **still implemented** where it's cheap, because removing the guards would be a regression risk if mobile is revisited. The implementation cost is small; the testing cost is what's deferred.
+- **Web-only optimizations** (larger viewports, mouse/keyboard interaction patterns, desktop browser DevTools workflow) take precedence in any trade-off.
+
+Appendix E lists every mobile-tagged item so they can be picked up as a coherent unit when a mobile pass eventually happens.
+
 ---
 
 ## 2. Design principles
@@ -75,9 +88,11 @@ On version mismatch, the default behaviour is to discard the old payload and sta
 
 Replay and live play should share the same pure state-transition functions. React component handlers should become wrappers around pure engine functions, adding logs, animations, audio, reactions, and timers only after the deterministic transition is known.
 
-### 2.5 Mobile and accessibility matter
+### 2.5 Desktop accessibility matters
 
-Every new UI feature must be checked on a narrow viewport, especially around the existing bottom-aligned player hand. New modals, tabs, sliders, buttons, and replay controls must remain keyboard accessible.
+Every new UI feature must be keyboard reachable, focus-visible, and screen-reader labelled. Modals, tabs, sliders, buttons, and replay controls must work end-to-end with Tab / Enter / Esc on a desktop keyboard.
+
+Mobile viewport behaviour is deferred (§1.2). Narrow-viewport guidance is preserved inline and consolidated in Appendix E for a future mobile pass — the code patterns (responsive containers, no fixed widths that overflow narrow viewports) should still be followed where they cost nothing extra, but testing on 360×640 is not a blocker for this pass.
 
 ---
 
@@ -228,7 +243,7 @@ On click:
 
 - Compute the recommended discard index.
 - Highlight the recommended tile with a gold glow.
-- Show a small `↑ best` tag above the tile, not underneath it, to avoid clipping on short mobile viewports.
+- Show a small `↑ best` tag above the tile, not underneath it (placing it below cramps the bottom-aligned hand on any viewport).
 - Set `state.hintUsedThisGame = true` on first use.
 
 ### 5.5 Hint logic
@@ -258,7 +273,7 @@ No new AI heuristic is required for the first version.
 - Clicking `Hint` sets `state.hintUsedThisGame` once per match.
 - Refreshing after using a hint preserves `hintUsedThisGame = true`.
 - Advancing rounds does not reset `hintUsedThisGame`.
-- A 360×640 viewport does not clip the hint tag.
+- A 360×640 viewport does not clip the hint tag. **(deferred — mobile)**
 - Selecting a different tile clears the hint highlight.
 
 ---
@@ -451,7 +466,7 @@ useEffect(() => { /* debounced save uses stateRef */ },   // runs on persist tri
 
 If `stateRef.current = state` is assigned inside the debounced save callback, the ref lags by up to 500ms — and the close-event handler then reads a stale state, defeating the whole point of unconditional flush. The first effect has no dependency array on purpose: it must run every render so the ref is always current.
 
-Do not use `unload`. It's deprecated and unreliable on mobile.
+Do not use `unload`. It's deprecated; `pagehide` is the spec-blessed replacement on all platforms.
 
 ### 6.8 Clear triggers
 
@@ -485,7 +500,7 @@ If the user changes language, difficulty, wind rounds, or training mode while a 
 - Corrupt save data is discarded without crashing.
 - Version-mismatched save data is discarded without crashing.
 - Closing the tab shortly after a move loses at most one tile action.
-- iOS-style backgrounding is handled as well as practical through `pagehide` and `visibilitychange`.
+- iOS-style backgrounding is handled as well as practical through `pagehide` and `visibilitychange`. **(deferred — mobile)** The handlers are still wired (cheap implementation cost; deferral applies to testing).
 - Animation and reaction state never reappears after resume.
 - Lifecycle events after a clear trigger do not recreate `mahjong_in_progress`.
 
@@ -1362,6 +1377,7 @@ The pool sizes are intentionally small (4 each) so daily challenges don't surfac
 - Reaction bubble appears near the AI strip for about 3 seconds.
 - Latest reaction replaces previous reaction for the same AI.
 - Add a menu toggle to disable AI reactions.
+- Reaction bubble sizing targets desktop viewports first; narrow-viewport sizing is deferred per §1.2.
 
 ### 11.6 Acceptance criteria
 
@@ -1418,7 +1434,7 @@ Size target:
 2. Calls `.load()` on each — browsers will fetch in parallel.
 3. For BGM (if shipped): creates one element with `loop=true`, `preload="auto"`, but does **not** call `.play()` until §12.7's Music toggle is on.
 
-**iOS Safari audio unlock pattern.** iOS requires audio to start within a user-gesture call stack. The `initAudioAfterGesture` call satisfies this on first interaction, but cached `HTMLAudioElement`s created before the gesture remain locked. To handle this robustly: lazy-create elements on first `playSfx(name)` call rather than at gesture time, AND make `initAudioAfterGesture` play a 1-sample silent buffer through `AudioContext` (creating + resuming the context inside the gesture handler) to fully unlock the page's audio output.
+**iOS Safari audio unlock pattern. (deferred — mobile)** iOS requires audio to start within a user-gesture call stack. The `initAudioAfterGesture` call satisfies this on first interaction, but cached `HTMLAudioElement`s created before the gesture remain locked. To handle this robustly: lazy-create elements on first `playSfx(name)` call rather than at gesture time, AND make `initAudioAfterGesture` play a 1-sample silent buffer through `AudioContext` (creating + resuming the context inside the gesture handler) to fully unlock the page's audio output. The pattern is still safe to implement against desktop browsers (it's a no-op on browsers that don't enforce the iOS unlock semantics), and doing so now means a future mobile pass doesn't need an audio rewrite.
 
 **Missing-asset graceful degradation.** `playSfx(name)` must `catch` the rejected `.play()` Promise and the `error` event on each `<audio>` element, suppressing them silently. Logging a single console warning per missing asset (not per call) is enough. The acceptance criterion "Missing audio assets fail gracefully" (§12.8) means no thrown errors and no spam.
 
@@ -1830,7 +1846,7 @@ Keep the 10 most recently started replayable games.
 
 #### 14.5.1 Storage budget and quota failure
 
-Rough upper bound: 10 games × up to 16 rounds × ~150 actions × ~80 bytes/action ≈ 1.9 MB, plus lifetime stats, achievements, daily results, audio settings, current resume save. Within the ~5 MB per-origin localStorage budget most browsers allow, but **iOS Safari** historically evicts aggressively and the per-origin cap is fragile.
+Rough upper bound: 10 games × up to 16 rounds × ~150 actions × ~80 bytes/action ≈ 1.9 MB, plus lifetime stats, achievements, daily results, audio settings, current resume save. Within the ~5 MB per-origin localStorage budget desktop browsers comfortably allow. iOS Safari historically evicts aggressively — **(deferred — mobile)** — but the quota-fallback strategy below applies on desktop too (Chrome, Firefox, and Safari/desktop all enforce some per-origin cap and can return QuotaExceededError under unusual conditions).
 
 Write strategy on `mahjong_replays`:
 
@@ -1930,7 +1946,7 @@ Game-over modal:
 - Replay does not create new logs.
 - Replay does not re-fire AI reactions.
 - Replay works after resuming mid-game.
-- Replay UI fits on a 360px-wide viewport.
+- Replay UI fits on a 360px-wide viewport. **(deferred — mobile)**
 - Old replay entries are evicted down to 10 games.
 
 ---
@@ -2012,15 +2028,9 @@ Apply this checklist to every UI feature in this spec.
 - Replay timeline slider requires a meaningful label.
 - Achievement toasts should not steal focus.
 
-### 16.4 Mobile viewport
+### 16.4 Mobile viewport (deferred)
 
-Verify at minimum:
-
-- 360×640 viewport.
-- Hint label does not clip.
-- Replay tabs fit via horizontal scrolling.
-- Toasts do not cover primary action buttons.
-- Bottom player hand remains usable.
+Mobile-viewport accessibility is deferred per §1.2. Detailed criteria and procedures are consolidated in Appendix E. The summary: the implementation should avoid hard-coded widths that overflow a 360×640 viewport (CSS that's responsive on desktop is generally responsive on mobile too), but no mobile-specific verification is required for any feature in this pass.
 
 ---
 
@@ -2227,19 +2237,16 @@ Pass = both assertions hold for every completed round in the 19.1 happy-path run
 
 ### 19.4 UI and accessibility
 
-#### 19.4.1 360×640 viewport
+#### 19.4.1 Desktop viewport sanity check
 
-In DevTools device toolbar, select 360×640:
+Verify the game at a typical desktop viewport (1280×800 to 1920×1080) using the system's default browser zoom. Confirm:
 
-| Element | Constraint |
-|---|---|
-| Player hand (14 tiles) | All tiles visible without horizontal scroll; tile width ≥ 22px |
-| Hint `↑ best` tag | Visible *above* highlighted tile, not clipped by viewport top |
-| Discard pool | Scrolls horizontally if any seat has > 8 discards; latest-discard badge always visible |
-| Round-over modal tab bar | Three tabs visible OR horizontally scrollable; no off-screen overflow |
-| Game-summary modal | Standings rows fit without horizontal scroll |
-| Toast | Anchored top; does not cover the bottom action bar |
-| Claim banner | Above player hand; does not push hand off-screen |
+- All tiles in the player hand fit on one row with comfortable spacing.
+- Discard pools for all four seats are visible simultaneously.
+- Modals (round-over, game-summary, menu, help, admin) fit on screen without internal scrolling.
+- Top bar (round info, wall count, mute/lang/menu buttons) doesn't wrap.
+
+Narrow-viewport (mobile) testing is deferred — see §19.11 and Appendix E.
 
 #### 19.4.2 Keyboard-only navigation
 
@@ -2300,7 +2307,7 @@ Toggle SFX off via menu. Play a full round. Pass = no audio. Toggle on; play ano
 | `expectedTileId` validation | Corrupt one `draw` action's `expectedTileId`; replay returns `ok: false` with `lastGoodIdx` pointing to action before corruption |
 | Mid-scrub error UX | Same corruption via timeline UI; scrubber clamps at `lastGoodIdx`; banner appears |
 | Admin-touched match excluded | Modify state via admin once; complete match; replay tab hidden or "unavailable" placeholder |
-| Replay UI fits 360×640 | Mini-board, timeline, prev/play/next all visible and operable |
+| Replay UI fits 360×640 **(deferred — mobile)** | Mini-board, timeline, prev/play/next all visible and operable |
 | Quota fallback | Inject 9 max-size replay games; play 10th; oldest dropped on persist. Inject 10; play 11th; oldest dropped (and 11th-from-top if still over quota) |
 | Pre-Feature-5 saves discarded | Set `mahjong_in_progress` to v1 with random base-36 tile ids; reload after Feature 5 ships; save discarded, no resume |
 
@@ -2362,6 +2369,18 @@ For every acceptance criterion across §5–§14, this table indicates which tes
 | §14.9 replay matches live final state | 19.3.5 |
 | §14.9 replay does not play SFX | 19.7 + manual audio check |
 | §14.9 quota fallback | 19.9 |
+
+### 19.11 Deferred — mobile / narrow viewport
+
+Tests in this subsection are **not run** as part of the web-first pass per §1.2. They are listed so a future mobile pass can pick them up as a unit. Detailed criteria live in Appendix E.
+
+- 360×640 viewport: every element constraint listed in Appendix E.1.
+- iOS Safari `pagehide` and `visibilitychange` lifecycle reliability.
+- iOS Safari audio unlock via `AudioContext` silent buffer.
+- iOS Safari quota eviction under aggressive write patterns.
+- Touch event interaction with tile selection / discard buttons.
+- Touch-and-hold behaviour (long-press) on tiles — not used today, but verify nothing breaks if added.
+- Mobile keyboard appearance behaviour when admin or names modal opens (virtual keyboard shouldn't cover input fields).
 
 ---
 
@@ -2809,4 +2828,104 @@ A condensed map of cross-phase touches that get easy to forget. Every time a pha
 | Phase 8 (audio) | Wire SFX calls in B.1, B.2, B.3, B.4, B.5, B.7, B.8, B.9. Add `mahjong_last_announced` to §6.8 clear-trigger list. |
 | Phase 9a (engine) | Convert every handler in Appendix B per the per-handler decomposition. Consolidate the scattered `persistRev` bumps from Phase 2 into the four-thing merge (§13.5). |
 | Phase 9b (replay) | Add per-round persistence to `nextRound` wrapper (B.10). Add admin-touched exclusion to replay UI (§14.8). |
+
+---
+
+## Appendix E: Mobile / iOS concerns (deferred)
+
+This appendix consolidates all mobile-tagged content from the spec so a future mobile pass can pick them up as a single coherent unit. **Nothing in this appendix is in scope for the current web-first pass** (§1.2).
+
+### E.1 Narrow-viewport (360×640) constraint table
+
+When a mobile pass eventually happens, verify the following in DevTools device toolbar at 360×640:
+
+| Element | Constraint |
+|---|---|
+| Player hand (14 tiles) | All tiles visible without horizontal scroll; tile width ≥ 22px |
+| Hint `↑ best` tag | Visible *above* the highlighted tile, not clipped by viewport top |
+| Discard pool | Scrolls horizontally if any seat has > 8 discards; latest-discard badge always visible |
+| Round-over modal tab bar | Three tabs visible OR horizontally scrollable; no off-screen overflow |
+| Game-summary modal | Standings rows fit without horizontal scroll |
+| Toast | Anchored top; does not cover the bottom action bar (Discard / Hu buttons) |
+| Claim banner | Above the player hand; does not push hand off-screen |
+| Replay UI | Mini-board, timeline slider, prev/play/next buttons all visible and operable |
+| Stats modal | Tabs (Games / Wins / Records / Streaks / Achievements) fit via horizontal scroll if needed |
+
+Design principle for desktop work that minimizes mobile-pass rework: prefer CSS-grid and flexbox responsive layouts with `min()` / `max()` / `clamp()` for sizes that should scale with viewport. Avoid fixed pixel widths that would overflow narrow viewports — even though no test verifies this in the web-first pass, the code patterns are the same effort to write either way.
+
+### E.2 iOS Safari lifecycle reliability
+
+**Source sections:** §6.7 (`pagehide` / `visibilitychange`), §6.10 ("iOS-style backgrounding").
+
+The lifecycle handlers are wired in the web-first pass:
+
+```js
+window.addEventListener("pagehide", flushSave);
+window.addEventListener("visibilitychange", () => { if (document.hidden) flushSave(); });
+window.addEventListener("beforeunload", flushSave);
+```
+
+What's deferred is the *verification* that these fire reliably on iOS Safari (which historically has had inconsistent `pagehide` firing during app-switching and home-button presses). Desktop coverage is sufficient for the web pass; mobile pass should verify by:
+
+1. Start a game on an iOS device (real device or simulator).
+2. Make a move; immediately swipe up to dismiss Safari to background.
+3. Reopen Safari; verify the move was saved.
+
+If `pagehide` proves unreliable on iOS, fallback strategies include shorter debounce intervals or treating every `setState` that bumps `persistRev` as a synchronous write.
+
+### E.3 iOS Safari audio unlock
+
+**Source section:** §12.4 (initAudioAfterGesture).
+
+The unlock pattern is implemented in the web-first pass (cheap, no-op on browsers that don't enforce iOS audio gesture semantics):
+
+```js
+function initAudioAfterGesture() {
+  // Standard preload for all browsers
+  preloadSfxElements();
+  // iOS unlock: play a silent buffer through AudioContext inside the gesture
+  if (!audioContextRef.current) {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const buffer = ctx.createBuffer(1, 1, 22050);
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.connect(ctx.destination);
+    src.start(0);
+    audioContextRef.current = ctx;
+  }
+}
+```
+
+What's deferred: verifying the unlock actually works on iOS, and the lazy-create-on-first-play fallback for `HTMLAudioElement`s that were cached pre-unlock.
+
+### E.4 iOS Safari quota eviction
+
+**Source section:** §14.5.1 (storage budget and quota failure).
+
+The quota fallback (drop oldest replay game on `saveJson` failure) is implemented in the web-first pass; it benefits desktop too (Chrome and Firefox can also return QuotaExceededError under unusual conditions).
+
+What's deferred: stress-testing on iOS Safari with the aggressive eviction patterns that historically affected it (Storage Standard partitioned eviction). Browser behaviour has shifted significantly since 2020 and the worst-case may already be handled by the existing fallback.
+
+### E.5 Touch interaction
+
+The current codebase uses `onClick` handlers for tile selection and discard. On touch devices, `onClick` fires from a synthetic event after `touchend` — typically fine but with ≈ 300ms tap delay on older iOS versions. If real-device testing reveals lag, mitigation is `touch-action: manipulation` CSS on tile buttons.
+
+Long-press gestures are not currently used. If added in a future feature, verify they don't interfere with iOS Safari's text-selection long-press (the `user-select: none` rule at index.html:14 already mitigates this).
+
+### E.6 Virtual keyboard interaction
+
+When admin or names modals open input fields, the iOS virtual keyboard slides up from the bottom and can cover the input. Standard fix is `position: fixed` on the modal with `bottom: 0` adjusted by `window.visualViewport.height`. Deferred — no tests in the web pass.
+
+### E.7 Mobile pass acceptance criteria
+
+When the mobile pass eventually happens, the acceptance criteria are:
+
+1. Every row in E.1 passes at 360×640 in DevTools and on a real iPhone SE (or smaller).
+2. E.2 lifecycle test produces a faithful resume in 10/10 background-foreground cycles.
+3. E.3 audio plays on the first user interaction with the page on iOS Safari.
+4. E.4 storage stress test does not produce data loss for resume save and lifetime stats (replay-only loss is acceptable per §14.5.1).
+5. E.5 tile selection lag (touchend → visible selection feedback) ≤ 100ms.
+6. E.6 input fields are not covered by the virtual keyboard in any modal.
+
+A mobile pass should re-rate confidence per Appendix D's phase checklist, treating Appendix E as the additional checklist column.
 
