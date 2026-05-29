@@ -24,6 +24,10 @@ function createInitialState(windRounds = 1, lang = "en") {
     personalities,
     playerNames: names,
     nameGroup: groupName,
+    // Match-scope hint usage flag (spec §5.3). Lives here, not in
+    // initRound, because nextRound spreads prev → gameInfo and we want
+    // this flag to carry through round transitions.
+    hintUsedThisGame: false,
   }, lang);
 }
 

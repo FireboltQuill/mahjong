@@ -25,6 +25,15 @@ function MahjongGame() {
   const [roundOverTab, setRoundOverTab] = useState("winner"); // "winner" | "scoring" | "stats"
   const [gameOverTab, setGameOverTab] = useState("standings"); // "standings" | "stats"
   const [gameOverAcknowledged, setGameOverAcknowledged] = useState(false);
+  // Training mode (spec §5). The menu setting persists in localStorage
+  // as a plain "true"/"false" string per §18 registry. hintIdx is the
+  // currently-highlighted hand tile and lives in component state only —
+  // never persisted, never on game state.
+  const [trainingMode, setTrainingMode] = useState(() => {
+    try { return localStorage.getItem("mahjong_training_mode") === "true"; }
+    catch { return false; }
+  });
+  const [hintIdx, setHintIdx] = useState(null);
   const [winSize, setWinSize] = useState({ w: typeof window !== "undefined" ? window.innerWidth : 1200, h: typeof window !== "undefined" ? window.innerHeight : 800 });
   const logRef = useRef(null);
   const autoPlayRef = useRef(null);
@@ -71,6 +80,19 @@ function MahjongGame() {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
+
+  // Persist training-mode menu setting (spec §5.3). Scalar key, no
+  // versioning — see §18 registry.
+  useEffect(() => {
+    try { localStorage.setItem("mahjong_training_mode", String(trainingMode)); }
+    catch {}
+  }, [trainingMode]);
+
+  // Clear the hint highlight whenever the discard window closes or moves
+  // to a different seat (spec §5.2 "relevant discard flow completes").
+  useEffect(() => {
+    setHintIdx(null);
+  }, [state.phase, state.currentTurn, state.turnDrawn]);
 
   // Dynamic styles based on viewport
   const S = useMemo(() => makeStyles(winSize.w, winSize.h), [winSize.w, winSize.h]);
@@ -493,6 +515,26 @@ function MahjongGame() {
         log: [...prev.log, _L().logYouGang(_TN(tiles[0]))],
       };
     });
+  }
+
+  // Training-mode hint: compute the expert-discard recommendation for
+  // the human's current hand and highlight that tile. Idempotent —
+  // clicking Hint repeatedly recomputes (deterministic since the hand
+  // hasn't changed during a discard window). hintUsedThisGame flips
+  // exactly once per match and survives round transitions because the
+  // flag lives on match-scope game info per spec §5.3.
+  function handleHint() {
+    if (state.currentTurn !== PLAYER_IDX) return;
+    if (state.phase !== "discard" || !state.turnDrawn) return;
+    const me = state.players[PLAYER_IDX];
+    const idx = aiChooseDiscard(
+      me.hand, me.openMelds, state.players,
+      "expert", "generic", state.wall.length, PLAYER_IDX
+    );
+    setHintIdx(idx);
+    if (!state.hintUsedThisGame) {
+      setState((prev) => prev.hintUsedThisGame ? prev : { ...prev, hintUsedThisGame: true });
+    }
   }
 
   function handlePlayerClaim(accept, option) {
@@ -1106,6 +1148,19 @@ function MahjongGame() {
                 ))}
               </div>
             </div>
+            <div style={S.menuToggleRow}>
+              <button
+                tabIndex={-1}
+                style={{ ...S.menuToggleBtn, ...(trainingMode ? S.menuToggleBtnActive : {}) }}
+                onClick={() => setTrainingMode((v) => !v)}
+                aria-pressed={trainingMode}
+              >
+                <span style={{ ...S.menuToggleBox, ...(trainingMode ? S.menuToggleBoxActive : {}) }}>
+                  {trainingMode ? "✓" : ""}
+                </span>
+                <span>{L.trainingModeLabel}</span>
+              </button>
+            </div>
             <div style={S.menuBtnRow}>
               <button tabIndex={-1} style={S.startBtn} onClick={startNewGame}>{L.startGame}</button>
               <button tabIndex={-1} style={S.langBtn} onClick={() => setLang(lang === "en" ? "zh" : "en")}>{L.langToggle}</button>
@@ -1315,6 +1370,9 @@ function MahjongGame() {
               {L.gangBtn(TN(g.tiles[0]))}
             </button>
           ))}
+          {trainingMode && canDiscard && (
+            <button tabIndex={-1} style={S.actionBtn} onClick={handleHint}>{L.hintBtn}</button>
+          )}
         </div>
 
         {/* Open melds */}
@@ -1337,6 +1395,7 @@ function MahjongGame() {
         <div style={S.playerHand}>
           {player.hand.map((t, i) => {
             const selected = selectedTileIdx === i;
+            const isHint = hintIdx === i;
             return (
               <button
                 tabIndex={-1}
@@ -1345,15 +1404,17 @@ function MahjongGame() {
                   ...S.handTile,
                   ...(selected ? S.handTileSelected : {}),
                   ...(canDiscard ? S.handTileClickable : {}),
+                  ...(isHint ? S.hintHighlight : {}),
                 }}
                 onClick={() => {
                   if (canDiscard) {
                     if (selected) handlePlayerDiscard(i);
-                    else setSelectedTileIdx(i);
+                    else { setSelectedTileIdx(i); setHintIdx(null); }
                   }
                 }}
                 title={TN(t)}
               >
+                {isHint && <span style={S.hintBadge}>{L.hintBestTag}</span>}
                 <span style={S.tileImg}>{tileSymbol(t)}</span>
                 <span style={S.tileLabel}>{TN(t)}</span>
               </button>
