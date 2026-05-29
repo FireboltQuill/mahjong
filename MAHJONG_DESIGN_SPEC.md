@@ -1131,10 +1131,18 @@ This prevents stale draw timers from deleting newer discard animations.
 
 ### 10.4 Animation kinds
 
-- `draw`: generic slide-in, no DOM measurement.
-- `discard`: FLIP animation from hand tile position to discard pool position.
-- `claim-pop`: scale and gold flash.
-- `win-shimmer`: sweeping gold gradient over winning hand.
+Each kind has a fixed `ttl` (in milliseconds, written into `state.tileAnims[id].ttl`) and a recommended CSS easing. Keep timings short so animations don't gate AI auto-play (600ms `setTimeout` in main.jsx:140).
+
+| Kind | TTL | Easing | DOM measurement? | Notes |
+|---|---:|---|---|---|
+| `draw` | 240ms | `cubic-bezier(0.2, 0.8, 0.2, 1)` | no | Generic slide-in from the wall edge — the tile element fades in with a brief Y translate. No FLIP read. |
+| `discard` | 280ms | `cubic-bezier(0.4, 0, 0.2, 1)` | **yes** (FLIP) | Read hand-tile rect before setState, read discard-pool rect after setState, apply inverse transform, animate to zero. |
+| `claim-pop` | 320ms | `cubic-bezier(0.34, 1.56, 0.64, 1)` (overshoot) | no | Scale 0.8 → 1.1 → 1.0 with gold flash overlay on the new meld tiles. |
+| `win-shimmer` | 1400ms | `linear` | no | Diagonal gold-gradient sweep across the winning hand container; runs as a CSS keyframe on the wrapper, not per-tile. |
+
+**Timing budget against AI auto-play:** the AI's 600ms `setTimeout` between actions (main.jsx:140) means animations must complete or be near-complete before the next AI move triggers. The combined draw + discard cycle (240 + 280 = 520ms) fits inside that budget. `claim-pop` is 320ms — well within budget. `win-shimmer` (1400ms) only runs at round end, when no AI auto-play is scheduled.
+
+If `prefers-reduced-motion: reduce` is active (§10.7), no animations are pushed and the AI timer effectively becomes the only pacing source.
 
 ### 10.5 FLIP discard requirements
 
@@ -1152,11 +1160,24 @@ ref={(el) => el
   : tileRefsRef.current.delete(tile.id)}
 ```
 
-Precondition audit (perform before any FLIP code lands):
+Precondition audit (perform before any FLIP code lands). The current codebase predates deterministic IDs and uses index keys in most tile-render sites. Concrete fix list, verified against `main.jsx`:
 
-- Grep `main.jsx` for every tile-rendering JSX block — hand tiles, discard pools, open meld tiles, dealer-indicator tile, hint-highlight overlay.
-- Replace any `key={i}`, `key={index}`, or array-position keys with `key={tile.id}`.
-- This audit is **not** "verify keys are already correct" — the current codebase predates deterministic IDs and at least some discard-pool renderers use index keys. They must be converted before FLIP relies on identity-stable keys.
+| Site | Line | Current key | Required key |
+|---|---:|---|---|
+| Player hand tile button | 1343 | `key={t.id}` | already correct ✓ |
+| Discard pool — seat 0 (you) | 1235 | `key={i}` | `key={t.id}` |
+| Discard pool — seat 1 (south) | 1225 | `key={i}` | `key={t.id}` |
+| Discard pool — seat 2 (west) | 1205 | `key={i}` | `key={t.id}` |
+| Discard pool — seat 3 (north) | 1215 | `key={i}` | `key={t.id}` |
+| Player open meld group | 1323 | `key={mi}` | `key={m.tiles[0].id}` (or a stable meld id) |
+| Player open meld tile | 1326 | `key={ti}` | `key={t.id}` |
+| Opponent open meld group | 721 | `key={mi}` | same as player meld |
+| Opponent open meld tile | 723 | `key={ti}` | `key={t.id}` |
+| Round-over winning tile (standard) | 1437, 1447, 1453 | `key={ti}` | `key={t.id}` |
+| Round-over winning tile (seven pairs) | 1437 | `key={ti}` | `key={t.id}` |
+| Log entries | 1369 | `key={i}` | OK to keep — append-only, not animated |
+
+Open meld groups need a stable meld-level key because tiles within the meld are immutable (the meld is formed once), so keying on `m.tiles[0].id` is sufficient. Index keys cause React to reuse DOM nodes across meld additions, which would attach stale FLIP refs to newly-formed melds.
 
 ### 10.6 Cleanup
 
@@ -1245,6 +1266,25 @@ Big-loss threshold:
 - Start with losses worse than `-80`.
 - Recalibrate after play data if it fires too often or too rarely.
 
+#### 11.4.1 Reaction line seed content
+
+Each reaction kind has a small pool of lines per language. The wrapper picks one using the `cosmeticRng` (§9.7) — keeping daily challenges deterministic in dialogue too — and writes it into `state.aiReactions[seat].line`. Lines should be short enough to fit in the reaction bubble at 360px viewport (≈ 20 chars EN, 12 chars ZH).
+
+```js
+const REACTION_LINES = {
+  hu_win:        { en: ["Hu!", "Got it!", "That's mine!", "Yes!"],                zh: ["胡了！", "我胡！", "中了！", "好！"] },
+  hu_lose:       { en: ["Not again...", "Tough break.", "Ugh.", "I had it."],     zh: ["又这样…", "亏了…", "唉…", "差一点。"] },
+  dealt_winner:  { en: ["Sorry!", "My bad.", "Take it.", "That was reckless."],   zh: ["抱歉！", "失误了。", "拿去吧。", "失算。"] },
+  big_loss:      { en: ["Painful.", "That hurts.", "Costly turn.", "Bleeding."],  zh: ["心痛。", "好痛。", "太亏。", "失血。"] },
+  bankrupt:      { en: ["Out of chips.", "Broke...", "Down and out.", "Empty."],  zh: ["破产了。", "没了…", "完了。", "空了。"] },
+  comeback:      { en: ["Back on top!", "Climbing back.", "Watch out!", "Here we go!"], zh: ["回来了！", "翻身！", "小心点！", "走起！"] },
+};
+```
+
+The pool sizes are intentionally small (4 each) so daily challenges don't surface a wildly different line on each replay; bigger pools dilute the determinism feel even if technically deterministic.
+
+**Selection rule:** at game start, the wrapper picks one *seed line index* per reaction kind per AI seat via `cosmeticRng` and stores it on `state.aiReactions._seeds[seat][kind]`. Reactions then index into the pool with that frozen seed, so the same AI always says the same thing on its first hu of a given game. (Future variation can rotate through the pool by incrementing the seed per fire — out of scope for v1.)
+
 ### 11.5 UI
 
 - Add avatar / initials chip to opponent strip header.
@@ -1298,6 +1338,18 @@ Size target:
 - SFX only: around 200–400KB.
 - SFX + BGM: ideally under 900KB.
 - If size becomes a problem, ship SFX first and defer BGM.
+
+**Codec strategy.** Ship MP3 only — Safari, Chrome, Firefox, and Edge all support MP3 natively in `<audio>` since ≈ 2017. Do not ship a second OGG copy: it doubles the asset bundle for zero practical benefit (the only browsers that need OGG instead of MP3 are end-of-life Firefox forks). If a future browser regression breaks MP3 in any mainstream browser, add OGG fallback then; do not pre-emptively double the bytes today.
+
+**Preload strategy.** No bundler means no static asset hashing — assets are served from `audio/*.mp3` relative to `index.html`. Use a single shared `Map<name, HTMLAudioElement>` keyed by SFX name. First user gesture triggers `initAudioAfterGesture` which:
+
+1. Creates one `HTMLAudioElement` per SFX with `preload="auto"`, sets `src` to `audio/${name}.mp3`.
+2. Calls `.load()` on each — browsers will fetch in parallel.
+3. For BGM (if shipped): creates one element with `loop=true`, `preload="auto"`, but does **not** call `.play()` until §12.7's Music toggle is on.
+
+**iOS Safari audio unlock pattern.** iOS requires audio to start within a user-gesture call stack. The `initAudioAfterGesture` call satisfies this on first interaction, but cached `HTMLAudioElement`s created before the gesture remain locked. To handle this robustly: lazy-create elements on first `playSfx(name)` call rather than at gesture time, AND make `initAudioAfterGesture` play a 1-sample silent buffer through `AudioContext` (creating + resuming the context inside the gesture handler) to fully unlock the page's audio output.
+
+**Missing-asset graceful degradation.** `playSfx(name)` must `catch` the rejected `.play()` Promise and the `error` event on each `<audio>` element, suppressing them silently. Logging a single console warning per missing asset (not per call) is enough. The acceptance criterion "Missing audio assets fail gracefully" (§12.8) means no thrown errors and no spam.
 
 ### 12.3 Storage schema
 
@@ -1383,6 +1435,28 @@ On resume, perform both steps unconditionally — do not let one short-circuit t
 
 Do not gate Case B on "Case A didn't catch it" — that creates a window where a Case A-covered resume leaves a stale side-channel that fires on the *next* round's resolution. Always consume the side-channel on resume; let it be a no-op when Case A handled the suppression.
 
+#### 12.6.2 React Strict Mode is enabled — verify both gates
+
+`React.StrictMode` is enabled at the app root (`main.jsx:1717`). This is **not a future concern** — effects, refs, and `setState` updaters run twice in development today, and the Case A / Case B SFX gate must survive this.
+
+**Case A (`prevResolutionRef` priming):** refs persist across Strict Mode's intentional double-effect-run, so the resolution-SFX effect should fire once even under Strict Mode. First invocation sees `prev = null`, fires `playSfx`, writes ref to non-null. Second invocation sees `prev = non-null`, no-ops. **Acceptance:** in development with Strict Mode active, finishing a round plays the round-over SFX exactly once.
+
+**Case B (side-channel consumption):** `mahjong_last_announced` is read from `localStorage` inside the resume effect and `suppressNextResolutionSfx` is consumed on the next transition. Strict Mode's double-run could consume the flag twice if the read-and-clear isn't structured correctly. Use this shape:
+
+```js
+useEffect(() => {
+  const announced = loadJson("mahjong_last_announced", 1, null);
+  if (announced && announced.gameId === state.gameId && announced.roundNumber === state.roundNumber) {
+    suppressNextResolutionSfxRef.current = true;
+  }
+  removeStorageKey("mahjong_last_announced");
+}, []);  // resume effect — runs once per mount, but Strict Mode mounts twice
+```
+
+The `removeStorageKey` is **outside** any guard, so a Strict Mode second run sees the empty side-channel and the ref is set the second time too (idempotent). Test: refresh inside the <500ms debounce window after a win, with Strict Mode on, fires exactly one resolution SFX (not zero, not two).
+
+This same Strict-Mode-survives discipline applies to every other one-shot localStorage flag in the spec — read-and-clear must be paired so the second run doesn't get a different answer.
+
 ### 12.7 UI
 
 Menu:
@@ -1431,11 +1505,12 @@ or expanded `js/game-state.jsx` if keeping files smaller is preferred.
 stepDraw(state, seat, { expectedTileId } = {})
 stepDiscard(state, seat, tileId)
 stepClaim(state, claim)
-stepPassClaim(state, seat, { expectedTileId } = {})
-stepDeclareHu(state, seat, { winningTileId, discarder, expectedWinType } = {})
-stepDeclareGang(state, seat, { tileKey, source, tileIds } = {})
+stepDeclareHu(state, seat, { winningTileId, discarder, expectedWinType, expectedLargeHu, expectedSevenPairs } = {})
+stepDeclareGang(state, seat, { tileKey, source, tileIds, expectedReplacementTileId } = {})
 stepResolvePass(state)
 ```
+
+`stepPassClaim` is **not** a separate step function. Pass decisions are not load-bearing for replay state reconstruction (see §13.6 note on `pass_claim` removal). They live entirely inside the live `resolveClaims` walk.
 
 Each function:
 
@@ -1450,11 +1525,11 @@ Each function:
 
 `applyWin` is already pure and should be called from the relevant step functions rather than duplicated.
 
-**`expectedTileId` semantics.** `expectedTileId` is a **validation-only** parameter that the replay engine passes when re-running an action against the seeded engine; the live engine ignores it. The wall's order is the source of truth for what gets drawn — the action log records what *did* get drawn so that replay can sanity-check the reproduction. Implementation:
+**`expected*` semantics.** All fields with an `expected` prefix are **validation-only** parameters that the replay engine passes when re-running an action against the seeded engine; the live engine ignores them. The wall's order and the engine's `applyWin` derivation are the source of truth — the action log records what *did* happen so that replay can sanity-check the reproduction. Implementation pattern:
 
 ```js
 function stepDraw(state, seat, { expectedTileId } = {}) {
-  const tile = state.wall[state.wall.length - 1];
+  const tile = state.wall[0];
   if (expectedTileId !== undefined && tile.id !== expectedTileId) {
     throw new ReplayMismatchError({ at: "stepDraw", expected: expectedTileId, got: tile.id });
   }
@@ -1462,9 +1537,15 @@ function stepDraw(state, seat, { expectedTileId } = {}) {
 }
 ```
 
-Same rule applies to `expectedWinType` in `stepDeclareHu` (validates the win-type the action log recorded matches the recomputed one). Live wrappers must not pass `expectedTileId`; they let the engine pop whichever tile is on top of the wall.
+For `stepDeclareHu`, the engine recomputes `winInfo` via `buildWinInfo` (scoring.jsx:29). The expected fields validate the recomputed result against the action log:
 
-**`stepPassClaim`'s `expectedTileId`** is the id of the discard the pass is in response to — validation-only, same semantics as `stepDraw`. Renamed from `discardedTileId` for consistency: any field whose role is "the live engine knows this from state, but replay records it for validation" uses the `expected*` prefix.
+- `expectedWinType: "zimo" | "dianpao"` — matches `winInfo.type`.
+- `expectedLargeHu: boolean` — matches `winInfo.largeHu`.
+- `expectedSevenPairs: boolean` — matches `winInfo.sevenPairs`.
+
+For `stepDeclareGang`, `expectedReplacementTileId` validates the wall tile drawn as replacement for both `"concealed"` and `"discard"` sources (both cause a replacement draw — see Appendix A.6).
+
+Live wrappers must not pass any `expected*` field; they let the engine derive the truth.
 
 ### 13.4 Live wrappers
 
@@ -1494,7 +1575,7 @@ Do not split state transition and action-log append into separate `setState` cal
 
 **Side effects live outside the updater.** SFX calls (`playSfx`), animation pushes (`pushAnim`), and AI reaction triggers (`enqueueReaction`) must run in the *handler scope* — typically immediately before or after the `setState(...)` call — not inside the updater function. Two reasons:
 
-1. **React Strict Mode runs updaters twice intentionally.** Calling `playSfx("draw")` inside the updater would fire the sound twice in dev. Even outside Strict Mode, React may invoke updaters multiple times when concurrent rendering bails out.
+1. **React Strict Mode is enabled** (main.jsx:1717) and runs updaters twice intentionally in development. Calling `playSfx("draw")` inside the updater fires the sound twice. This is happening **today** in the dev build, not a hypothetical.
 2. **The updater is supposed to be a pure function of `prev`.** Side effects in the updater break that contract and make the handler harder to reason about.
 
 The clean shape:
@@ -1527,7 +1608,6 @@ Types:
 "draw"
 "discard"
 "claim"
-"pass_claim"
 "declare_hu"
 "declare_gang"
 "resolve_pass"
@@ -1543,37 +1623,47 @@ Schemas:
 {
   type: "claim",
   seat,
-  claimType,            // "chi" | "peng" | "gang"
-  discarder,            // seat that just discarded
-  claimedTileId,        // the discard being claimed
-  handTileIds,          // the tiles in claimer's hand that combine with claimedTileId
-  resultingMeldTileIds  // the final meld's tile ids in their final order
+  claimType,             // "chi" | "peng"  (gang from discard is logged as declare_gang, see below)
+  discarder,             // seat that just discarded
+  claimedTileId,         // the discard being claimed
+  handTileIds,           // the tiles in claimer's hand that combine with claimedTileId
+  resultingMeldTileIds   // the final meld's tile ids in their final order
 }
-
-{ type: "pass_claim", seat, expectedTileId }
 
 {
   type: "declare_hu",
   seat,
   winningTileId,
-  discarder,            // null for zimo, otherwise the discarder
-  expectedWinType       // validation-only; "smallHu" | "largeHu" | "sevenPairs" etc.
+  discarder,             // null for zimo, otherwise the discarder
+  expectedWinType,       // "zimo" | "dianpao" — matches winInfo.type
+  expectedLargeHu,       // boolean — matches winInfo.largeHu
+  expectedSevenPairs     // boolean — matches winInfo.sevenPairs
 }
 
 {
   type: "declare_gang",
   seat,
-  tileKey,              // suit_rank or suit_honor
-  source,               // "concealed" | "promoted" | "discard"
-  tileIds               // the four tile ids forming the gang
+  tileKey,                    // suit_rank or suit_honor
+  source,                     // "concealed" | "discard"
+  tileIds,                    // the four tile ids forming the gang
+  handTileIds,                // for source: "discard", the three tiles taken from hand
+  claimedTileId,              // for source: "discard", the discard id being clawed into the gang
+  discarder,                  // for source: "discard", the seat that discarded the tile
+  expectedReplacementTileId   // the wall tile drawn as replacement (both sources)
 }
 
 { type: "resolve_pass" }
 ```
 
-**Why `handTileIds` is recorded explicitly on `claim`:** chi has multiple legal in-hand combinations (a claimer holding 1, 2, 3, 4 of bamboo who claims a 2-bamboo discard can form either 1-2-3 or 2-3-4). Recording the chosen `handTileIds` disambiguates without re-running AI claim logic. For peng/gang the two needed tiles are unique up to id, but recording them is still required so replay can verify they were in-hand at claim time.
+**Why `handTileIds` is recorded explicitly on `claim`:** chi has multiple legal in-hand combinations (a claimer holding 1, 2, 3, 4 of bamboo who claims a 2-bamboo discard can form either 1-2-3 or 2-3-4). Recording the chosen `handTileIds` disambiguates without re-running AI claim logic. For peng the two needed tiles are unique up to id, but recording them is still required so replay can verify they were in-hand at claim time.
 
-Replay actions must contain enough information to reproduce human and AI choices without running live AI decision wrappers. The replay engine validates `expectedTileId` and `expectedWinType` and aborts with a `ReplayMismatchError` (§13.3) on disagreement; it does not re-decide those choices.
+**Why gang from discard is `declare_gang`, not `claim`:** despite the live code routing it through `executeClaim` (main.jsx:369), the action schema unifies all gang formations under `declare_gang` because both concealed and discard-source gangs cause a replacement draw, and `claim` actions do not. Keeping the schema clean here makes the replay engine simpler: any `claim` action skips the wall, any `declare_gang` action pops one tile from the wall as the replacement.
+
+**Why `pass_claim` was removed:** pass decisions are not load-bearing for replay state reconstruction. The action log shows `discard` followed by either a `claim`/`declare_gang`/`declare_hu` (someone took it) or a `resolve_pass` (all declined). Mid-window per-player decline tracking is internal to live `resolveClaims`; replay does not need to reproduce the prompt-and-decline UX.
+
+**Why `"promoted"` gang source was removed:** the codebase does not implement promoted gang (peng → gang upgrade by drawing the fourth tile). Out of scope per §1.1 (no new rulesets). If the rule is ever added, extend the enum and add a `promoted_gang` action type that consumes the existing peng meld and the drawn tile.
+
+Replay actions must contain enough information to reproduce human and AI choices without running live AI decision wrappers. The replay engine validates all `expected*` fields and aborts with a `ReplayMismatchError` on disagreement; it does not re-decide those choices.
 
 ### 13.7 Acceptance criteria
 
@@ -1708,6 +1798,38 @@ Rules:
 - Do not run live wrappers.
 - Do not emit logs, audio, reactions, or live-game side effects.
 - On `ReplayMismatchError` from any step function, abort replay and surface a "replay corrupted" message to the UI rather than continuing with a divergent state.
+
+#### 14.7.1 Mid-scrub error UX
+
+A replay can have hundreds of actions; a `ReplayMismatchError` halfway through is recoverable for the UI but not for the replay engine state. Handle it like this:
+
+```js
+function replayRound(roundSeed, roundStartInfo, actions, upToActionIdx, lang) {
+  let state = initRound(roundStartInfo, lang, roundSeed);
+  let lastGoodIdx = -1;
+  try {
+    for (let i = 0; i <= upToActionIdx; i++) {
+      state = applyReplayAction(state, actions[i]);
+      lastGoodIdx = i;
+    }
+    return { state, ok: true, lastGoodIdx };
+  } catch (err) {
+    if (err instanceof ReplayMismatchError) {
+      return { state, ok: false, lastGoodIdx, error: err };
+    }
+    throw err;  // unknown errors propagate
+  }
+}
+```
+
+UI consumes the result:
+
+- `ok: true` — the scrubber works freely over the action range; the user can move forward and backward.
+- `ok: false` — the scrubber is **clamped** to `lastGoodIdx`. Attempting to scrub past that point shows an inline banner: *"Replay corrupted at action N — this game's later actions can't be reproduced."* The Show All Hands toggle and previous/play/next buttons still work within `[0, lastGoodIdx]`.
+
+This means replay UI never shows the user a partially-reconstructed state; either you're seeing a faithful reproduction or you're seeing a clear stop.
+
+**When does this fire in practice?** Only if action log persistence and engine state diverge — schema version mismatches caught in §6.3 / §9.11 prevent the obvious cases. The remaining vectors are: spec changes to step functions between recording and replay (rare, but a sticky issue across releases), and corrupted localStorage (already handled by §4.2's discard policy at load time). The error surface is therefore narrow but not zero.
 
 ### 14.8 UI
 
@@ -1965,4 +2087,347 @@ Conventions:
 - `MAHJONG_DESIGN_SPEC.md` (this document) is the implementation contract (the *what* — state, schemas, signatures, acceptance criteria).
 - When a feature ships, both documents are updated in the same commit: roadmap status in `IMPROVEMENTS.md`, any technical deviations from this spec recorded inline here.
 - If the two disagree, the design spec wins on implementation details; the roadmap wins on intent.
+
+---
+
+## Appendix A: Codebase audit (current state)
+
+This appendix freezes a map of `main.jsx` and its supporting files at spec time so implementers do not need to reverse-engineer the existing structure before applying each phase's changes. Line numbers verified against the working tree.
+
+### A.1 React Strict Mode is enabled
+
+`main.jsx:1717` mounts the root inside `React.StrictMode`:
+
+```js
+ReactDOM.createRoot(document.getElementById('root')).render(
+  React.createElement(React.StrictMode, null, React.createElement(MahjongGame))
+);
+```
+
+Every effect, every `setState` updater, every ref initialization runs **twice** in development. This is load-bearing for §6.7 (resume save), §7.5 (game-over effect), §8.7 (combined lifetime/achievement effect), §12.6 (SFX gate), §13.5 (single-setState invariant), and §14.4 (replay persistence). All of these must be written to survive double-invocation; the spec sections call out the specific patterns required.
+
+### A.2 `useState` / `useRef` inventory
+
+| Hook | Line | Purpose | Persisted across resume? |
+|---|---:|---|---|
+| `state` | 10 | main game state | yes (slim-save §6.5) |
+| `windRoundsSetting` | 11 | menu config | no — re-read from save's `windRoundsSetting` |
+| `showMenu` | 12 | menu visibility | no |
+| `selectedTileIdx` | 13 | UI selection | no |
+| `claimOptions` | 14 | claim-prompt option list | no |
+| `lang` | 15 | localization | no — read from save's `lang` |
+| `difficulty` | 16 | AI difficulty | no — read from save's `difficulty` |
+| `showHelp` | 17 | help modal | no |
+| `showAdmin` | 18 | admin modal | no |
+| `adminInput` | 19 | admin form buffer | no |
+| `adminTab` | 20 | admin tab | no |
+| `showNames` | 21 | names modal | no |
+| `nameGroups` | 22 | persisted name groups | via `mahjong_name_groups` |
+| `newNameInputs` / `newGroupInput` | 23–24 | input buffers | no |
+| `roundOverTab` / `gameOverTab` | 25–26 | modal tab UI | no |
+| `gameOverAcknowledged` | 27 | terminal ack | **no** — lives in component state, not on `state`. The save effect's dep array reads it from component scope. On resume, it defaults to `false`; if the restored state is round-over, the round-over modal re-renders. |
+| `winSize` | 28 | viewport | no |
+| `logRef` | 29 | log scroll ref | n/a |
+| `autoPlayRef` | 30 | reserved | n/a |
+| `langRef` / `diffRef` / `namesRef` | 31–44 | mirror state for setState updaters | n/a |
+
+### A.3 `useEffect` inventory
+
+| Line | Trigger | Side effect |
+|---:|---|---|
+| 69 | mount | window resize listener |
+| 81 | `state.log` | log-panel auto-scroll |
+| 86 | `state.winner`, `state.isDraw` | reset `roundOverTab` to `"winner"` on new round |
+| 94 | `state.winner`, `state.isDraw`, `state.roundNumber` | append per-round result to `state.roundResults` (with duplicate-guard for Strict Mode safety) |
+| 134 | `state.currentTurn`, `state.phase`, `state.turnDrawn`, `state.winner`, `state.isDraw`, `showMenu`, `state.awaitingPlayerClaim` | AI auto-play via 600ms `setTimeout` |
+
+The roundResults-recording effect already uses the Strict-Mode-safe pattern (`if (prev.roundResults.some((r) => r.round === prev.roundNumber)) return prev`). Future game-over and lifetime/achievement effects must use the same dedup pattern keyed on `state.gameId`.
+
+### A.4 Handler inventory and `persistRev` bump map
+
+This table tells you exactly which `main.jsx` handlers must include `persistRev: prev.persistRev + 1` in their `setState` merge once Phase 2 adds the counter. Phase 9a wrapper extraction will consolidate these but Phase 2 must scaffold them per-callsite (§6.6.2).
+
+| Handler / source | Line | setState? | Bumps persistRev? | Notes |
+|---|---:|---|---|---|
+| `addLog` | 58 | yes | no (log-only) | Slim-save trims log to last 50 lines anyway |
+| `useEffect` roundResults recording | 97 | yes | yes | Strict-Mode dedup already in place |
+| `useEffect` AI auto-play → `processAIAction` | 141 | yes | yes | 600ms timer; will become wrapper around step functions in Phase 9a |
+| `handlePlayerDraw` | 403 | yes | yes | Also calls `setSelectedTileIdx(null)` outside the setState |
+| `handlePlayerDiscard` | 433 | yes | yes | Same selectedTileIdx clear outside |
+| `handleDeclareHu` | 456 | yes | yes | Zimo path only — dianpao goes through `handlePlayerClaim` |
+| `handleDeclareConcealedGang` | 471 | yes | yes | Does **not** check zimo on replacement — human must click Hu manually after |
+| `handlePlayerClaim` | 498 | yes | yes | Branches to `executeClaim` or back to `resolveClaims` |
+| `applyAdmin` | 600 | yes | yes | Must also set `adminTouched: true` (Phase 2 addition) |
+| `nextRound` | 660 | yes | yes | Spreads `prev` into `initRound` per §5.3 — confirmed line 669 |
+| `startNewGame` | 519 | yes | reset (initial-state load) | Also resets `selectedTileIdx`, `claimOptions`, `roundOverTab`, `gameOverTab`, `gameOverAcknowledged` |
+| `startWithAdmin` | 648 | yes | reset | Same as startNewGame plus opens admin |
+| `setGameOverAcknowledged(true)` | 1548 | n/a (separate React state) | yes (triggers save effect) | Dep of save effect at §6.6 |
+| `executeClaim` (internal) | 324 | no (called from above) | inherits caller | Helper |
+| `resolveClaims` (internal) | 232 | no (called from above) | inherits caller | Helper |
+| `advanceTurn` (internal) | 389 | no (called from above) | inherits caller | Helper |
+| `processAIAction` (internal) | 146 | no (called from useEffect at 141) | inherits caller | Helper |
+
+### A.5 `applyAdmin` scope (exact field list)
+
+`applyAdmin` (lines 600–645) mutates exactly the following fields:
+
+**Sets:**
+- `currentTurn` (from `adminInput.turn`)
+- `phase` (from `adminInput.phase`)
+- `turnDrawn` (derived: `phase === "discard"`)
+- `wall` (prepends parsed user tiles, drops equal count from front)
+- `players[*].hand` (from `parseTileList`)
+- `players[*].openMelds` (from `parseMeldList`)
+- `players[*].discards` (from `parseTileList`)
+- `scores` (from `adminInput.players[*].score`)
+
+**Clears (sets to null/empty/false):**
+- `lastDiscard`, `lastDiscarder`, `lastDrawn`
+- `awaitingPlayerClaim`, `playerDeclinedClaims`, `pendingClaims`
+- `winner`, `winInfo`, `scoreBreakdown`, `isDraw`
+
+**Does NOT touch:**
+- `dealer`, `roundWind`, `roundNumber`, `totalRounds`, `windRounds`
+- `roundResults`, `personalities`, `playerNames`, `nameGroup`, `gameId`, `matchSeed`, `roundSeeds`
+- `log` (log entries from before admin remain)
+- `hintUsedThisGame`, `dailyGame`, `dailyDate` (when these fields are added)
+
+**Phase 2 additions:** `applyAdmin` must also set `adminTouched: true` and bump `persistRev`. Replay (§14.8) excludes any match where `adminTouched === true`.
+
+**Tile-ID release hazard:** because `applyAdmin` rebuilds hands/melds/discards from parsed input, tile IDs from the prior board state are released. Per §9.4, the next admin pass scans the current board for collision floor — released IDs from a previous admin pass can be reused, which is the acknowledged FLIP-ref glitch noted in §9.4.2.
+
+### A.6 Concealed gang and replacement draws
+
+`processAIAction` (lines 171–194) handles AI concealed gang **atomically** within a single draw step:
+
+1. AI draws a tile from the wall (`state.wall[0]`)
+2. If concealed gang found, remove 4 matching tiles, add meld, draw replacement from wall, replacement becomes new `winTile`
+3. Check `validateHu` on the post-replacement hand; if true, call `applyWin` with `winType: "zimo"`
+4. Return next state
+
+`handleDeclareConcealedGang` (lines 471–496) handles the human path:
+
+1. Human clicks gang button (requires `state.phase === "discard"` and `turnDrawn === true`)
+2. Remove 4 matching tiles, add meld, draw replacement from wall, update `lastDrawn`
+3. Return — does **not** check Hu. Human must click the Hu button afterward if the replacement won.
+
+**Action log decomposition (Phase 9a):**
+
+- Concealed gang during AI turn → `declare_gang(source: "concealed", expectedReplacementTileId)`. If AI also wins, a separate `declare_hu(expectedWinType: "zimo")` follows.
+- Concealed gang during human turn → `declare_gang(source: "concealed", expectedReplacementTileId)`. Human's Hu click (if any) produces a separate `declare_hu` action.
+- Gang from discard (claimed) → `declare_gang(source: "discard", expectedReplacementTileId, claimedTileId, handTileIds, discarder)`. The discard pool's tile is moved into the meld; the discarder seat's `discards` array loses the tile.
+
+In all cases, `stepDeclareGang` is a single pure step that handles meld formation + replacement draw atomically. No separate `stepDraw` action follows for the replacement.
+
+### A.7 AI determinism scan results
+
+`ai.jsx` was scanned end-to-end for non-determinism beyond the documented `Math.random` at line 476.
+
+**Findings — no risk:**
+
+- `for (const k in counts)` and `Object.values(counts)` iterations (lines 11, 35, 257, 295) are over `countTiles` results. `countTiles` (`validation.jsx:5`) inserts keys in the iteration order of its input array, which is `sortHand(...)` — a deterministic comparator. Iteration order is therefore deterministic per identical input hand.
+- `for (const opt of opts)` iteration (line 458) over `findChiOptions` results — `findChiOptions` builds the array via three deterministic sequence checks, no RNG, no Object iteration.
+- No `Date.now()`, `performance.now()`, `new Date()`, or `setTimeout` usage in any decision function.
+- No closure-captured cache state, no module-level mutable counters.
+- No `Set` or `Map` iteration where insertion order would matter (the few `Set` uses in `validation.jsx`/`main.jsx` are for `has()` checks, not iteration).
+
+**Conclusion:** after the §9.3.2 biased-sort fix lands, the AI is fully deterministic given identical state. The daily-challenge wall + AI invariant in §9.7 is implementable.
+
+### A.8 Action-log coverage gaps (resolved in §13.6)
+
+The action-schema audit against `claims.jsx`, `scoring.jsx`, `validation.jsx`, and `main.jsx` produced three structural fixes already applied to §13.6:
+
+1. **`winType` enum corrected** from `"smallHu" | "largeHu" | "sevenPairs"` to `"zimo" | "dianpao"`. The smallHu/largeHu/sevenPairs flags are derived by `buildWinInfo` (scoring.jsx:29); they are validated separately via `expectedLargeHu` and `expectedSevenPairs`.
+2. **`"promoted"` removed from `declare_gang.source` enum.** Not implemented in this codebase.
+3. **`pass_claim` action type removed.** Pass decisions are not load-bearing for replay; the action log shape itself distinguishes "all passed" (next action is a `resolve_pass` or a draw from the next seat) from "someone claimed" (next action is `claim` / `declare_gang` / `declare_hu`).
+
+**Confirmed covered without changes:**
+
+- Robbing the kong (qiang gang hu): **not implemented** in this codebase, so no schema impact.
+- Multiple Hu candidates on one discard: `resolveClaims` (main.jsx:232) walks seats in deterministic order with priority Hu > Gang > Peng > Chi, breaking ties by turn distance. The single recorded `declare_hu` action is unambiguous.
+- Dealer's first turn: initRound (game-state.jsx:42) deals 14 tiles to the dealer; the dealer enters the round in `phase: "discard"` with `turnDrawn: true`. The action log naturally starts with the dealer's first discard.
+- Chow disambiguation: `handTileIds` on the `claim` action resolves this.
+
+### A.9 Module-level Math.random call sites (Phase 5 fix list)
+
+Already enumerated in §9.3.1 with line numbers. Repeated here for cross-reference convenience: `tiles.jsx:47`, `tiles.jsx:108`, `names.jsx:62`, `names.jsx:76`, `ai.jsx:476`. After Phase 5 these are the only sites that need to change; no other Math.random calls exist in gameplay code.
+
+---
+
+## Appendix B: Engine decomposition map (Phase 9a)
+
+Per-handler decomposition: for each existing `main.jsx` handler, this table specifies what becomes the pure step function call and what stays in the React wrapper. Use this as the actual checklist for the Phase 9a refactor.
+
+### B.1 `handlePlayerDraw` (line 403)
+
+**Pure step:** `stepDraw(state, PLAYER_IDX)` — pops wall, adds to hand, returns next state with `phase: "discard"`, `turnDrawn: true`, `lastDrawn: tile`.
+
+**Wrapper responsibilities:**
+- Guard: `prev.currentTurn !== PLAYER_IDX || prev.phase !== "draw"` → return prev (preserve current behaviour)
+- Empty wall: return `{ ...prev, isDraw: true, log: [...] }` — could be part of step but cleaner as wrapper since it's a terminal state, not a draw
+- Append `actionLog` entry: `{ type: "draw", seat: PLAYER_IDX, expectedTileId: drawn.id }`
+- Append human-readable `log` entry
+- Bump `persistRev`
+- Check `validateHu` post-draw; if true, append a "can hu" hint to the log (no state mutation)
+- Call `setSelectedTileIdx(null)` outside the setState
+
+**Side effects (outside setState):** play `draw.mp3`, push `tileAnims[drawn.id] = { kind: "draw", ... }`.
+
+### B.2 `handlePlayerDiscard` (line 433)
+
+**Pure step:** `stepDiscard(state, PLAYER_IDX, tileId)` — removes from hand, appends to discards, sets `lastDiscard`/`lastDiscarder`, transitions to `phase: "claim"`, clears `playerDeclinedClaims`.
+
+**Wrapper responsibilities:**
+- Guard same as draw
+- Append `actionLog`: `{ type: "discard", seat: PLAYER_IDX, tileId }`
+- Append human-readable log
+- Bump `persistRev`
+- Call `setSelectedTileIdx(null)` outside
+
+**Side effects:** play `discard.mp3`, push FLIP animation from hand position to discard pool.
+
+### B.3 `handleDeclareHu` (line 456)
+
+**Pure step:** `stepDeclareHu(state, PLAYER_IDX, { winningTileId, discarder: null })` — calls `applyWin` internally, sets winner/winInfo/scoreBreakdown/scores.
+
+**Wrapper responsibilities:**
+- Guard: `prev.currentTurn !== PLAYER_IDX` → return prev
+- `validateHu` check: if false, append "bad hu" log and return without calling step
+- Append `actionLog`: `{ type: "declare_hu", seat: PLAYER_IDX, winningTileId, discarder: null, expectedWinType: "zimo", expectedLargeHu, expectedSevenPairs }`
+- Append human-readable log
+- Bump `persistRev`
+
+**Side effects:** play `hu_win.mp3`, push `win-shimmer` animation, enqueue AI reactions on losing seats.
+
+### B.4 `handleDeclareConcealedGang` (line 471)
+
+**Pure step:** `stepDeclareGang(state, PLAYER_IDX, { tileKey, source: "concealed", tileIds })` — removes 4 tiles from hand, adds meld, pops wall replacement, updates `lastDrawn`.
+
+**Wrapper responsibilities:**
+- Guard same as draw + `phase === "discard"`
+- Empty wall: return draw-state terminal
+- Append `actionLog`: `{ type: "declare_gang", seat: PLAYER_IDX, tileKey, source: "concealed", tileIds, expectedReplacementTileId }`
+- Append human-readable log
+- Bump `persistRev`
+
+**Side effects:** play `gang.mp3`, push `claim-pop` animation.
+
+### B.5 `handlePlayerClaim` (line 498) — accept branch
+
+**Pure step (chi/peng):** `stepClaim(state, { seat: PLAYER_IDX, claimType, claimedTileId, handTileIds, resultingMeldTileIds, discarder })` — moves tiles from hand to new meld, removes discard from discarder's pool, sets `currentTurn` to claimer, transitions to `discard` with `turnDrawn: true`.
+
+**Pure step (gang from discard):** `stepDeclareGang(state, PLAYER_IDX, { source: "discard", tileKey, tileIds, claimedTileId, handTileIds, discarder })` — same as concealed but takes from discard, draws replacement.
+
+**Pure step (hu by claim):** `stepDeclareHu(state, PLAYER_IDX, { winningTileId, discarder })` — calls `applyWin` with `winType: "dianpao"`.
+
+**Wrapper responsibilities:**
+- Guard: no `awaitingPlayerClaim` → return prev
+- Branch on `claim.type` to the correct step
+- Append appropriate `actionLog` entry
+- Clear `awaitingPlayerClaim`, `playerDeclinedClaims`
+- Bump `persistRev`
+- Call `setClaimOptions(null)` outside
+
+**Side effects:** play `chi.mp3`/`peng.mp3`/`gang.mp3`/`hu_win.mp3` depending on type.
+
+### B.6 `handlePlayerClaim` (line 498) — decline branch
+
+**Not a step function call.** Pure logic that appends to `playerDeclinedClaims` and re-runs `resolveClaims`. Stays entirely in the wrapper (no engine boundary).
+
+- Append decline to `playerDeclinedClaims`
+- Re-run `resolveClaims(newSt)` which either: prompts for another claim, executes an AI claim, or calls `advanceTurn`
+- If `advanceTurn` is reached without any claim, append `actionLog`: `{ type: "resolve_pass" }`
+- Bump `persistRev`
+
+### B.7 `processAIAction` (line 146) — draw phase
+
+Wraps three potential pure steps in sequence:
+
+1. `stepDraw(state, p)`
+2. If post-draw hand has a concealed gang: `stepDeclareGang(state, p, { source: "concealed", ... })` — recursive on the same AI turn
+3. If post-replacement `validateHu` succeeds: `stepDeclareHu(state, p, { winningTileId: winTile.id, discarder: null })`
+
+**Wrapper responsibilities:**
+- Empty wall: terminal draw state
+- One `setState` updater contains the full chain of step results plus all appended actions
+- Bump `persistRev` once for the entire chain
+- 600ms `setTimeout` reset on next dep change (`useEffect` already handles this)
+
+**Side effects:** play `draw.mp3`; if gang fires, `gang.mp3`; if hu fires, `hu_win.mp3` + reaction enqueues.
+
+### B.8 `processAIAction` (line 146) — discard phase
+
+**Pure step:** `stepDiscard(state, p, discardedTileId)`.
+
+**Wrapper responsibilities:**
+- Call `aiChooseDiscard` to determine the tile (must happen OUTSIDE the setState updater — Strict Mode would call it twice, which is fine since deterministic, but cleaner to compute once)
+- Append `actionLog`: `{ type: "discard", seat: p, tileId }`
+- Bump `persistRev`
+
+**Side effects:** play `discard.mp3`.
+
+### B.9 `processAIAction` (line 146) — claim phase (`resolveClaims`)
+
+`resolveClaims` walks priority order Hu > Gang > Peng > Chi. The wrapper-side logic:
+
+- For each seat (in priority order), call `aiDecideClaim`
+- If a claim is found, call the appropriate step function (`stepClaim` / `stepDeclareGang` / `stepDeclareHu`)
+- If no claim: call `stepResolvePass(state)` — pure transition from claim phase back to draw phase for next seat
+- Append exactly one terminal action: `claim` / `declare_gang` / `declare_hu` / `resolve_pass`
+- Bump `persistRev` once
+
+This is the hottest single setState merge — it can fire on the same tick the human discards. Strict Mode invokes it twice, so:
+
+- `aiDecideClaim` must be deterministic (confirmed in A.7)
+- AI claim's `handTileIds` must be picked deterministically (it is: `findPengOption` returns first match, `findChiOptions` returns in fixed sequence order)
+
+### B.10 `nextRound` (line 660)
+
+**Pure step:** `initRound(gameInfo, lang, roundSeed)` — same call as today, no changes.
+
+**Wrapper responsibilities:**
+- Compute `roundSeed = seedForRound(matchSeed, roundNumber)` and store in `state.roundSeeds`
+- Spread `prev` into the `gameInfo` arg (confirmed line 669)
+- If `roundNumber > totalRounds`: emit terminal log and return without `initRound`
+- Bump `persistRev`
+- **Phase 9b add:** persist the just-finished round's replay data (§14.4) BEFORE returning the new round state — uses `state.roundStartInfo`, `state.roundSeeds[prevRoundNumber]`, and the full `state.actionLog`
+
+### B.11 `applyAdmin` (line 600)
+
+**Not a step function call.** Admin is a full-state replacement that bypasses gameplay logic. Stays in the wrapper.
+
+- Set `adminTouched: true`
+- Bump `persistRev`
+- Clear `actionLog: []` — the action log is no longer reproducible against the new state
+- Do NOT bump `roundSeeds` — admin doesn't reseed
+
+### B.12 `startNewGame` / `startWithAdmin` (lines 519, 648)
+
+**Pure step:** `createInitialState(windRoundsSetting, lang, seed?, { dailyDate? })` per §9.6.
+
+**Wrapper responsibilities:**
+- Reset `selectedTileIdx`, `claimOptions`, `roundOverTab`, `gameOverTab`, `gameOverAcknowledged`, `showMenu`
+- For `startWithAdmin`: open admin overlay with the freshly created state
+- Initial `persistRev: 0` (state starts at 0, bumped by first user mutation)
+- Clear `resumeClearedRef` (allows next save cycle to write again)
+
+---
+
+## Appendix C: Phase ordering checklist
+
+A condensed map of cross-phase touches that get easy to forget. Every time a phase ships, scan this list for "retroactive" edits.
+
+| When this phase ships | Update these earlier-phase touchpoints |
+|---|---|
+| Phase 0 (storage helper) | None — foundational |
+| Phase 1 (training mode) | Add `state.hintUsedThisGame: false` to `createInitialState` return |
+| Phase 2 (resume) | Add `gameId`, `persistRev`, `adminTouched` to `state`. Hand-scaffold `persistRev: prev.persistRev + 1` into every handler in Appendix A.4's "bumps yes" rows. Add `applyAdmin` `adminTouched` set. |
+| Phase 3 (lifetime stats) | Combined game-over effect with synchronous ordering per §7.5 |
+| Phase 4 (achievements) | Sample `roundStats.humanClaimedDiscardThisRound` inside the claim wrappers (B.5), `wallCountAtWin` inside Hu wrappers (B.3/B.5 hu branch), `humanWasLowestOrTiedLowestAfterRound` from `state.scores` in the round-end effect. |
+| Phase 5 (seeded RNG) | Replace every Math.random in Appendix A.9. Branch `createInitialState` on daily mode (§9.6). Bump `mahjong_in_progress.v` to 2. |
+| Phase 6 (animations) | Apply the §10.5 key-fix audit. Push animations in wrappers (B.1, B.2, B.4, B.5). |
+| Phase 7 (portraits/reactions) | Enqueue reactions in B.3 (own win), B.5 (own claim — dianpao given), B.7 (AI Hu), B.9 (AI dianpao given). |
+| Phase 8 (audio) | Wire SFX calls in B.1, B.2, B.3, B.4, B.5, B.7, B.8, B.9. Add `mahjong_last_announced` to §6.8 clear-trigger list. |
+| Phase 9a (engine) | Convert every handler in Appendix B per the per-handler decomposition. Consolidate the scattered `persistRev` bumps from Phase 2 into the four-thing merge (§13.5). |
+| Phase 9b (replay) | Add per-round persistence to `nextRound` wrapper (B.10). Add admin-touched exclusion to replay UI (§14.8). |
 
