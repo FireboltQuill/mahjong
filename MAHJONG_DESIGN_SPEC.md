@@ -99,13 +99,18 @@ Before adding more persisted features, add a small helper module so each feature
 ### 4.2 API
 
 ```js
-function loadJson(key, expectedVersion, fallback) {
+function loadJson(key, expectedVersion, fallback, migrate) {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return fallback;
     const parsed = JSON.parse(raw);
-    if (!parsed || parsed.v !== expectedVersion) return fallback;
-    return parsed;
+    if (!parsed) return fallback;
+    if (parsed.v === expectedVersion) return parsed;
+    if (typeof migrate === "function") {
+      const migrated = migrate(parsed);
+      if (migrated && migrated.v === expectedVersion) return migrated;
+    }
+    return fallback;
   } catch {
     return fallback;
   }
@@ -128,12 +133,37 @@ function removeStorageKey(key) {
     return false;
   }
 }
+
+// Scalar (string/boolean-as-string) helpers — keep unversioned scalar keys
+// like `mahjong_training_mode` from inlining localStorage calls.
+function loadString(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw === null ? fallback : raw;
+  } catch {
+    return fallback;
+  }
+}
+
+function saveString(key, value) {
+  try {
+    localStorage.setItem(key, String(value));
+    return true;
+  } catch {
+    return false;
+  }
+}
 ```
+
+The optional `migrate` callback is the escape hatch from §2.3: callers can pass a function that takes the old payload and returns a `{ v: expectedVersion, ... }` shape. If migration returns anything else (null, wrong version, throws), `loadJson` falls back. Callers that want strict "discard on mismatch" simply omit `migrate`. Default policy stays "discard"; migrations are opt-in per call.
 
 ### 4.3 Acceptance criteria
 
 - All new structured storage features use `loadJson` and `saveJson`.
-- Version mismatch returns fallback without throwing.
+- All scalar storage features use `loadString` and `saveString` — no inline `localStorage.getItem` in feature code.
+- Version mismatch with no `migrate` callback returns fallback without throwing.
+- Version mismatch with a `migrate` callback returning the expected version returns the migrated payload.
+- Version mismatch with a `migrate` callback that throws or returns the wrong shape returns fallback without throwing.
 - Corrupt JSON returns fallback without throwing.
 - Storage write failure does not crash the app.
 
@@ -171,6 +201,7 @@ Important placement:
 
 - `hintUsedThisGame` belongs on the match-level game info created by `createInitialState`.
 - It must not be initialized by `initRound`, because `nextRound` calls `initRound({...prev, ...})` and the field must carry through unchanged across rounds.
+- **Verify before implementing:** confirm `nextRound` in `main.jsx` actually spreads `prev` into `initRound`'s argument. If it doesn't (e.g., it constructs a fresh `gameInfo` by hand), the match-level field will be silently dropped at round transition. The fix is to spread `prev` rather than work around it at the call site.
 
 The computed hint itself is not stored on state. It is derived on demand.
 
@@ -328,6 +359,8 @@ This is safer than manually listing coarse fields (`phase`, `currentTurn`, `roun
 
 The bump is co-located with the `setState` merge that produces the underlying change. Feature 9a's single-`setState` invariant (§13.5) requires all four of (step result + actionLog append + log append + persistRev increment) to land in the same merge — so adding the bump is a one-line change per step wrapper.
 
+**Phase ordering caveat.** Feature 2 ships before Feature 9a per the phases table in §3, but Feature 9a is what *makes* `persistRev` a one-line addition by funnelling state transitions through engine step wrappers. In Phase 2, before the wrappers exist, each existing `setState` callsite that performs a gameplay mutation must be hand-edited to include `persistRev: prev.persistRev + 1`. Expect this to be sprawling — `main.jsx` is the main offender. Phase 9a's wrapper migration consolidates those scattered bumps into the four-thing merge described above; until then, treat the per-callsite bumps as scaffolding with a known follow-up.
+
 **Bump these mutations:**
 
 | Source | Mutation | Bumps? |
@@ -385,9 +418,19 @@ Each handler calls `flushSave()` **unconditionally** — not gated on `saveTimer
 
 `flushSave()` must:
 
-- Read the latest state from `stateRef.current` (kept in sync inside the save effect).
+- Read the latest state from `stateRef.current`.
 - Write synchronously to `localStorage`.
 - Clear any pending debounce timer so it can't later overwrite a more recent flush.
+
+**`stateRef` must be updated in its own ungated effect**, not inside the debounced save effect:
+
+```js
+useEffect(() => { stateRef.current = state; });           // runs every render
+useEffect(() => { /* debounced save uses stateRef */ },   // runs on persist triggers
+         [state.persistRev, showMenu, state.gameOverAcknowledged]);
+```
+
+If `stateRef.current = state` is assigned inside the debounced save callback, the ref lags by up to 500ms — and the close-event handler then reads a stale state, defeating the whole point of unconditional flush. The first effect has no dependency array on purpose: it must run every render so the ref is always current.
 
 Do not use `unload`. It's deprecated and unreliable on mobile.
 
@@ -460,6 +503,16 @@ localStorage["mahjong_lifetime_stats"] = {
 ```
 
 `lifetimeUpdatedFor` stores the most recent `gameId` already folded into lifetime stats.
+
+**Defaults.** `DEFAULT_LIFETIME_STATS` zeros every counter except the four "extremum" fields, which start as `null`:
+
+- `biggestSingleGain: null` — first observed gain replaces null; subsequent updates take `Math.max`.
+- `biggestSingleLoss: null` — first observed loss replaces null; subsequent updates take `Math.min` (losses are negative).
+- `bestEndingBalance: null` — first finished game's ending balance replaces null; subsequent updates take `Math.max`.
+- `worstEndingBalance: null` — first finished game's ending balance replaces null; subsequent updates take `Math.min`.
+- `lifetimeUpdatedFor: null`.
+
+`null` is preferred over `±Infinity` so the UI can render "—" before any game is played without a sentinel-value check. `mergeLifetime` must short-circuit the `Math.min`/`Math.max` calls when the prior value is `null`.
 
 ### 7.3 Counter semantics
 
@@ -571,6 +624,8 @@ Use an explicit trigger and mode rather than overloading `scope`:
 - `normal`: non-daily games only.
 - `daily`: daily games only.
 
+**Future extensibility.** If training-mode-specific achievements ever appear (e.g., "win 5 games using hints"), extend `mode` with `"training"` and `"non-training"` rather than re-introducing predicate-level gating. Keeping the framework filter authoritative is the same principle that drove the `purist` decision in §8.6 — don't dilute it.
+
 Predicate context:
 
 ```js
@@ -612,6 +667,27 @@ Daily-only:
 - Tied-for-lowest counts.
 - Game win means human final score equals the maximum final score.
 - Shared first counts as a win.
+
+**Data requirement.** This predicate needs per-round cumulative standings, not just per-round outcomes. Today's `roundResults` shape (as appended by `applyWin`) captures the resolution of each round but not the four-player cumulative scores after that round. Before this achievement can ship, extend the entry shape to:
+
+```js
+{
+  // ...existing fields (winner, winType, delta, etc.)
+  scoresAfter: [number, number, number, number]
+}
+```
+
+`scoresAfter` is computed inside `applyWin` (or the round-end branch of the engine wrappers, post-extraction) from the pre-round scores plus the resolved deltas. With that field present, the predicate is:
+
+```js
+const lowRounds = roundResults.filter(r =>
+  r.scoresAfter[0] === Math.min(...r.scoresAfter)
+).length;
+const humanWon = state.scores[0] === Math.max(...state.scores);
+return humanWon && lowRounds >= Math.ceil(state.totalRounds / 2);
+```
+
+Without `scoresAfter`, `comeback_kid` cannot be implemented honestly; do not ship it against a `state.scores`-only approximation that conflates final standings with mid-game standings.
 
 `purist` is registered with `mode: "normal"`, so the achievement framework already filters out daily games before the predicate is called. The predicate itself is then minimal:
 
@@ -792,6 +868,20 @@ The collision-floor scan must look at every place a tile id can live. Exhaustive
 
 Parse each `t.id` as `parseInt(id, 10)`; treat non-numeric ids (from pre-Feature-5 saves) as `-1`. The floor at `1000` then handles the case where every existing id is non-numeric.
 
+#### 9.4.2 Admin tile ID reuse and FLIP refs
+
+The scan only considers *currently present* tiles. If an admin pass removes a tile, its ID is released — a later admin pass scanning the board may mint a fresh tile with the same numeric ID, because nothing in state remembers that the ID was ever used. Under normal play this is harmless. Under animation it is not: §10.5 FLIP refs key off `tile.id`, and `tileRefsRef.current` may still hold a stale ref slot from the removed tile if cleanup hasn't run yet.
+
+**Resolution:** track admin-minted IDs at match scope so they're never reused within a match.
+
+```js
+state.usedAdminIds = []  // array of numeric ids minted by any applyAdmin in this match
+```
+
+`applyAdmin` computes its starting floor as `max(scannedMax + 1, 1000, max(state.usedAdminIds) + 1)` and appends every newly minted id to `state.usedAdminIds` before returning. Persists across rounds (lives on match-scope game info, like `gameId`).
+
+Acceptable alternative: no tracking, but document that admin-touched matches set `state.adminTouched = true` (which they already do per §6.2) and that animation glitches in admin-touched matches are an acknowledged non-bug. Pick one and apply it consistently.
+
 ### 9.5 Seed model
 
 Match-level seed:
@@ -812,7 +902,15 @@ Round seed helper:
 
 ```js
 function seedForRound(matchSeed, roundNumber) {
-  return Math.imul(matchSeed ^ roundNumber, 0x9E3779B9) >>> 0;
+  // Two-stage mix: XOR a well-spread per-round constant into the match seed,
+  // then run one xorshift step. The single-Math.imul form
+  // (matchSeed ^ roundNumber) is too close to identity for small roundNumber:
+  // adjacent match seeds map to adjacent round seeds, which Mulberry32
+  // tolerates but is avoidable.
+  let h = (matchSeed ^ Math.imul(roundNumber + 1, 0x85EBCA6B)) >>> 0;
+  h = Math.imul(h ^ (h >>> 16), 0xC2B2AE35) >>> 0;
+  h = (h ^ (h >>> 13)) >>> 0;
+  return h >>> 0;
 }
 ```
 
@@ -845,6 +943,16 @@ new Date().toISOString().slice(0, 10)
 ```
 
 This is UTC by design.
+
+**Capture point.** The date string is captured exactly once, when `createInitialState` is called for a daily game, and stored on state:
+
+```js
+state.dailyDate = "YYYY-MM-DD"  // UTC, frozen at game-start
+```
+
+All subsequent reads — the seed derivation, the result-storage key in `mahjong_daily.results`, the UI "today's daily" label, the `already-played` check on game-over — must read `state.dailyDate`, not recompute `new Date().toISOString().slice(0, 10)`.
+
+This prevents a midnight-UTC flip mid-game from re-keying an in-progress daily as the next day's. It also means a player starting at 23:55 UTC continues playing "today's" daily after the UTC rollover — by intent. The menu's "today's daily" affordance, however, *does* recompute the current UTC date each render so the menu reflects the current day's challenge after rollover.
 
 Seed hash:
 
@@ -1178,7 +1286,19 @@ localStorage["mahjong_last_announced"] = {
 - On resume, if the side-channel matches current `gameId` and `roundNumber`, suppress the next resolution SFX transition once.
 - Clear the side-channel with resume-clear triggers.
 
-#### 12.6.1 React Strict Mode verification
+#### 12.6.1 Precedence and consumption order
+
+Case A and Case B address the same SFX-on-resume problem but cover disjoint failure modes. They compose, and the order matters.
+
+On resume, perform both steps unconditionally — do not let one short-circuit the other:
+
+1. **Always** read and clear the `mahjong_last_announced` side-channel. If it matches the resumed `gameId` and `roundNumber`, set `suppressNextResolutionSfx = true`. Reading and clearing happen atomically (read, then `removeStorageKey`) before any render-driven SFX logic runs.
+2. **Always** prime `prevResolutionRef` from the restored state — even if Case A has already covered the no-transition path. Priming is a write to a ref; it has no cost if redundant.
+3. The first render after restore then runs its `prev → next` resolution comparison. If `prevResolutionRef` was primed (Case A), there is no transition, no SFX, and `suppressNextResolutionSfx` is left intact (a subsequent crash-and-resume during the next round resolution still gets its one-shot suppression). If somehow a transition does fire (Case B path: the restored state was pre-resolution but the side-channel says SFX already played), the suppression flag consumes itself on that transition.
+
+Do not gate Case B on "Case A didn't catch it" — that creates a window where a Case A-covered resume leaves a stale side-channel that fires on the *next* round's resolution. Always consume the side-channel on resume; let it be a no-op when Case A handled the suppression.
+
+#### 12.6.2 React Strict Mode verification
 
 Strict Mode is not currently enabled in this codebase, so this is a future concern rather than an immediate blocker. **If Strict Mode is ever turned on**, re-test:
 
@@ -1394,6 +1514,18 @@ Evict only when appending a new game entry, not on every mid-game round update.
 
 Do not create an empty replay stub at game start; doing so would evict older finished games before the new game has replayable content.
 
+#### 14.5.1 Storage budget and quota failure
+
+Rough upper bound: 10 games × up to 16 rounds × ~150 actions × ~80 bytes/action ≈ 1.9 MB, plus lifetime stats, achievements, daily results, audio settings, current resume save. Within the ~5 MB per-origin localStorage budget most browsers allow, but **iOS Safari** historically evicts aggressively and the per-origin cap is fragile.
+
+Write strategy on `mahjong_replays`:
+
+1. Try `saveJson("mahjong_replays", next)`.
+2. If it returns `false` (quota exceeded), drop the oldest game from `next.games`, retry. Repeat until success or the list reaches one entry.
+3. If a one-entry write still fails, swallow silently — replay is non-critical; resume and lifetime stats matter more and use other keys. Log a single console warning per session.
+
+This mirrors how the action log itself is bounded (trim to last 50 log entries before resume save, §6.5) — accept smaller history rather than letting one feature corrupt the storage envelope. Lifetime stats and the in-progress save must never fail to write because replay history was greedy.
+
 ### 14.6 Resume linkage
 
 On resume:
@@ -1585,16 +1717,16 @@ Final target order:
 
 ## 18. Storage key registry
 
-| Key | Versioned | Owner | Purpose |
-|---|---:|---|---|
-| `mahjong_training_mode` | No | Training mode | Boolean menu setting stored as string |
-| `mahjong_in_progress` | Yes | Resume | Current resumable game |
-| `mahjong_lifetime_stats` | Yes | Stats | Lifetime counters |
-| `mahjong_achievements` | Yes | Achievements | Unlocked badge dates |
-| `mahjong_daily` | Yes | Daily challenge | Daily results by UTC date |
-| `mahjong_audio` | Yes | Audio | Volume and mute settings |
-| `mahjong_last_announced` | Yes | Audio/resume | Resolution-SFX suppression side channel |
-| `mahjong_replays` | Yes | Replay | Finished-round replay data |
+| Key | Versioned | Helper | Owner | Purpose |
+|---|---:|---|---|---|
+| `mahjong_training_mode` | No | `loadString`/`saveString` | Training mode | Boolean menu setting stored as string |
+| `mahjong_in_progress` | Yes | `loadJson`/`saveJson` | Resume | Current resumable game |
+| `mahjong_lifetime_stats` | Yes | `loadJson`/`saveJson` | Stats | Lifetime counters |
+| `mahjong_achievements` | Yes | `loadJson`/`saveJson` | Achievements | Unlocked badge dates |
+| `mahjong_daily` | Yes | `loadJson`/`saveJson` | Daily challenge | Daily results by UTC date |
+| `mahjong_audio` | Yes | `loadJson`/`saveJson` | Audio | Volume and mute settings |
+| `mahjong_last_announced` | Yes | `loadJson`/`saveJson` | Audio/resume | Resolution-SFX suppression side channel |
+| `mahjong_replays` | Yes | `loadJson`/`saveJson` (with quota fallback, §14.5.1) | Replay | Finished-round replay data |
 
 ---
 
