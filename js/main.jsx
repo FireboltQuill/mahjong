@@ -15,6 +15,10 @@ function MahjongGame() {
   const [lang, setLang] = useState("en");
   const [difficulty, setDifficulty] = useState("easy");
   const [showHelp, setShowHelp] = useState(false);
+  const [showStats, setShowStats] = useState(false);
+  // Lifetime stats loaded once at mount and refreshed when the modal
+  // opens or after a game-over merge (spec §7).
+  const [stats, setStats] = useState(() => loadLifetime());
   const [showAdmin, setShowAdmin] = useState(false);
   const [adminInput, setAdminInput] = useState(null);
   const [adminTab, setAdminTab] = useState("state"); // "state" | "names"
@@ -201,6 +205,30 @@ function MahjongGame() {
       document.removeEventListener("visibilitychange", visHandler);
     };
   }, []);
+
+  // ============================================================
+  // LIFETIME STATS (spec §7)
+  // ============================================================
+  //
+  // Single combined game-over effect (spec §7.5 / §8.7). Runs when
+  // gameOverAcknowledged flips true. Idempotent under React Strict Mode
+  // via the lifetimeUpdatedFor === gameId short-circuit — second
+  // invocation sees the freshly written lifetimeUpdatedFor and no-ops.
+  // Spec §7.5 also mandates this synchronous ordering precede the resume
+  // save clear; Phase 2's debounced save effect fires the clear 500ms
+  // later, so this effect's saveLifetime always lands first.
+  useEffect(() => {
+    if (!gameOverAcknowledged) return;
+    if (!state.gameId) return;
+    const prev = loadLifetime();
+    if (prev.lifetimeUpdatedFor === state.gameId) return;
+    const delta = computeLifetimeDelta(state, PLAYER_IDX);
+    const next = mergeLifetime(prev, delta);
+    next.lifetimeUpdatedFor = state.gameId;
+    saveLifetime(next);
+    setStats(next);
+    // checkAchievements(next) — wired in Phase 4
+  }, [gameOverAcknowledged, state.gameId]);
 
   // Dynamic styles based on viewport
   const S = useMemo(() => makeStyles(winSize.w, winSize.h), [winSize.w, winSize.h]);
@@ -717,6 +745,18 @@ function MahjongGame() {
     setGameStarted(true);
   }
 
+  // Lifetime stats modal (spec §7.6). Re-read on open so stats stay
+  // current even if a game ended while the modal was last closed.
+  function openStats() {
+    setStats(loadLifetime());
+    setShowStats(true);
+  }
+  function resetStats() {
+    if (!window.confirm(L.statsResetConfirm)) return;
+    resetLifetime();
+    setStats({ ...DEFAULT_LIFETIME_STATS });
+  }
+
   // Name group editor: mutations also persist to localStorage.
   function persistGroups(next) {
     setNameGroups(next);
@@ -1040,6 +1080,93 @@ function MahjongGame() {
   }
 
   // ============================================================
+  // STATS OVERLAY (spec §7.6)
+  // ============================================================
+  function renderStatsOverlay() {
+    const dash = L.statsEmDash;
+    const fmtN = (n) => n === null || n === undefined ? dash : String(n);
+    const fmtSigned = (n) => {
+      if (n === null || n === undefined) return dash;
+      return n > 0 ? `+${n}` : String(n);
+    };
+    const fmtPct = (num, denom) => {
+      if (!denom) return dash;
+      return `${Math.round((num / denom) * 100)}%`;
+    };
+    const isEmpty = stats.gamesPlayed === 0;
+
+    function valueStyle(n, kind) {
+      if (n === null || n === undefined || n === 0) return S.statsKvValueL;
+      if (kind === "gain" && n > 0) return { ...S.statsKvValueL, ...S.statsValuePositive };
+      if (kind === "loss" && n < 0) return { ...S.statsKvValueL, ...S.statsValueNegative };
+      if (kind === "net") return n > 0
+        ? { ...S.statsKvValueL, ...S.statsValuePositive }
+        : { ...S.statsKvValueL, ...S.statsValueNegative };
+      return S.statsKvValueL;
+    }
+
+    function row(label, value, kind) {
+      return (
+        <div style={S.statsKvRow}>
+          <span style={S.statsKvLabelL}>{label}</span>
+          <span style={valueStyle(kind === "raw" ? null : value, kind)}>{value}</span>
+        </div>
+      );
+    }
+
+    return (
+      <div style={S.overlay} onClick={() => setShowStats(false)}>
+        <div style={S.statsPanel} onClick={(e) => e.stopPropagation()}>
+          <div style={S.statsHeader}>
+            <h2 style={S.statsTitle}>{L.statsTitle}</h2>
+            <button tabIndex={-1} style={S.menuBtn} onClick={() => setShowStats(false)}>{L.statsClose}</button>
+          </div>
+          <div style={S.statsScroll}>
+            {isEmpty ? (
+              <p style={S.statsEmptyMsg}>{L.statsEmpty}</p>
+            ) : (
+              <>
+                <div style={S.statsSection}>
+                  <div style={S.statsSectionHeader}>{L.statsSectionGames}</div>
+                  {row(L.lblGamesPlayed, fmtN(stats.gamesPlayed))}
+                  {row(L.lblGamesWon, fmtN(stats.gamesWon))}
+                  {row(L.lblWinRate, fmtPct(stats.gamesWon, stats.gamesPlayed))}
+                </div>
+                <div style={S.statsSection}>
+                  <div style={S.statsSectionHeader}>{L.statsSectionWins}</div>
+                  {row(L.lblRoundsPlayed, fmtN(stats.roundsPlayed))}
+                  {row(L.lblRoundsWon, fmtN(stats.roundsWon))}
+                  {row(L.lblSmallHu, fmtN(stats.smallHu))}
+                  {row(L.lblLargeHu, fmtN(stats.largeHu))}
+                  {row(L.lblZimoHu, fmtN(stats.zimoHu))}
+                  {row(L.lblSevenPairsHu, fmtN(stats.sevenPairsHu))}
+                  {row(L.lblRoundsDianpao, fmtN(stats.roundsDianpaoGiven))}
+                </div>
+                <div style={S.statsSection}>
+                  <div style={S.statsSectionHeader}>{L.statsSectionRecords}</div>
+                  {row(L.lblBiggestGain, fmtSigned(stats.biggestSingleGain), "gain")}
+                  {row(L.lblBiggestLoss, fmtSigned(stats.biggestSingleLoss), "loss")}
+                  {row(L.lblBestBalance, fmtN(stats.bestEndingBalance))}
+                  {row(L.lblWorstBalance, fmtN(stats.worstEndingBalance))}
+                  {row(L.lblTotalNet, fmtSigned(stats.totalScoreNet), "net")}
+                </div>
+                <div style={S.statsSection}>
+                  <div style={S.statsSectionHeader}>{L.statsSectionStreaks}</div>
+                  {row(L.lblCurrentStreak, fmtN(stats.currentWinStreak))}
+                  {row(L.lblLongestStreak, fmtN(stats.longestWinStreak))}
+                </div>
+              </>
+            )}
+          </div>
+          <div style={S.statsFooter}>
+            <button tabIndex={-1} style={S.statsResetBtn} onClick={resetStats}>{L.statsResetBtn}</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================================
   // ADMIN CONSOLE OVERLAY
   // ============================================================
   function renderAdminOverlay() {
@@ -1344,6 +1471,7 @@ function MahjongGame() {
             </div>
             <div style={S.menuHelpRow}>
               <button tabIndex={-1} style={S.langBtn} onClick={() => setShowHelp(true)}>{L.howToPlay}</button>
+              <button tabIndex={-1} style={S.langBtn} onClick={openStats}>{L.statsBtn}</button>
               <button tabIndex={-1} style={S.langBtn} onClick={() => setShowNames(true)}>{L.manageNamesBtn}</button>
               <button tabIndex={-1} style={S.langBtn} onClick={startWithAdmin}>{L.adminMenuBtn}</button>
             </div>
@@ -1360,6 +1488,7 @@ function MahjongGame() {
         </div>
       </div>
       {showHelp && renderHelpOverlay()}
+      {showStats && renderStatsOverlay()}
       {showAdmin && renderAdminOverlay()}
       {showNames && renderNamesOverlay()}
       </>
@@ -1944,6 +2073,7 @@ function MahjongGame() {
       )}
     </div>
     {showHelp && renderHelpOverlay()}
+    {showStats && renderStatsOverlay()}
     {showAdmin && renderAdminOverlay()}
     {showNames && renderNamesOverlay()}
     </>
