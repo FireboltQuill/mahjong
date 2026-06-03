@@ -97,7 +97,21 @@ function makeStyles(vw, vh) {
     minWidth: s(130), whiteSpace: "nowrap",
   },
   menuBtnRow: { display: "flex", gap: s(10), justifyContent: "center", alignItems: "center", flexWrap: "wrap", marginTop: s(6) },
-  menuHelpRow: { display: "flex", justifyContent: "center", marginTop: s(8) },
+  menuHelpRow: { display: "flex", gap: s(8), justifyContent: "center", marginTop: s(10), flexWrap: "wrap" },
+  // Compact icon-only buttons for secondary menu actions (Help, Stats,
+  // Names, Admin). The full label appears as a title tooltip on hover.
+  menuIconBtn: {
+    background: "rgba(201,169,97,0.08)",
+    border: `1px solid ${goldDim}`,
+    color: gold,
+    width: s(42), height: s(42),
+    borderRadius: s(8),
+    cursor: "pointer", outline: "none",
+    fontSize: ts(18),
+    display: "inline-flex", alignItems: "center", justifyContent: "center",
+    transition: "all 0.15s",
+    padding: 0,
+  },
   rulesBox: {
     flex: 1, padding: `${s(12)}px ${s(16)}px`, background: "rgba(0,0,0,0.25)", borderRadius: s(8),
     border: "1px solid rgba(201,169,97,0.12)", textAlign: "left",
