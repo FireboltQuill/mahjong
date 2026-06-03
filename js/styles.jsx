@@ -352,6 +352,44 @@ function makeStyles(vw, vh) {
     color: greenDim, fontSize: ts(11), textAlign: "center",
     marginTop: s(4), letterSpacing: 0.5, fontStyle: "italic",
   },
+  // Stats modal (spec §7.6)
+  statsPanel: {
+    background: `linear-gradient(145deg, ${bgLight}, ${bg})`, border: `2px solid ${gold}`,
+    borderRadius: s(14), padding: 0, maxWidth: s(560), width: "92%", maxHeight: "88vh",
+    boxShadow: "0 24px 80px rgba(0,0,0,0.6)", display: "flex", flexDirection: "column",
+  },
+  statsHeader: {
+    display: "flex", justifyContent: "space-between", alignItems: "center",
+    padding: `${s(14)}px ${s(20)}px`, borderBottom: `1px solid rgba(201,169,97,0.2)`, flexShrink: 0,
+  },
+  statsTitle: { color: gold, fontSize: s(20), margin: 0, letterSpacing: 2 },
+  statsScroll: {
+    overflowY: "auto", padding: `${s(14)}px ${s(20)}px`, flex: 1,
+  },
+  statsSection: { marginBottom: s(18) },
+  statsSectionHeader: {
+    color: gold, fontSize: ts(11), textTransform: "uppercase", letterSpacing: 2,
+    fontWeight: "bold", borderBottom: `1px solid rgba(201,169,97,0.2)`,
+    paddingBottom: s(4), marginBottom: s(8),
+  },
+  statsKvRow: {
+    display: "flex", justifyContent: "space-between", alignItems: "center",
+    padding: `${s(4)}px 0`, fontSize: ts(13),
+  },
+  statsKvLabelL: { color: green, letterSpacing: 0.5 },
+  statsKvValueL: { color: gold, fontWeight: "bold", fontFamily: "monospace" },
+  statsValuePositive: { color: "#7ec78a" },
+  statsValueNegative: { color: "#d4a0a0" },
+  statsEmptyMsg: { color: greenDim, fontStyle: "italic", textAlign: "center", padding: `${s(24)}px ${s(12)}px` },
+  statsFooter: {
+    display: "flex", justifyContent: "flex-end", gap: s(10),
+    padding: `${s(10)}px ${s(20)}px`, borderTop: `1px solid rgba(201,169,97,0.2)`, flexShrink: 0,
+  },
+  statsResetBtn: {
+    background: "rgba(180,80,80,0.15)", border: "1px solid rgba(200,100,100,0.35)", color: "#d4a0a0",
+    padding: `${s(6)}px ${s(14)}px`, borderRadius: s(6), cursor: "pointer", outline: "none",
+    fontSize: ts(12), letterSpacing: 1,
+  },
   tileImg: { fontSize: s(60), lineHeight: 1, display: "block", marginBottom: s(8) },
   tileLabel: { fontSize: ts(9), color: "#5a4a2a", marginTop: 0, textTransform: "capitalize", whiteSpace: "nowrap" },
 
