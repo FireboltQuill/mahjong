@@ -172,6 +172,8 @@ const LANG = {
     statsResetConfirm: "Reset all lifetime stats? This cannot be undone.",
     // Achievements (spec §8)
     statsSectionAchievements: "Achievements",
+    statsTabStats: "Stats",
+    statsTabAchievements: "Achievements",
     achToastUnlocked: (name) => `🏆 Achievement Unlocked: ${name}`,
     achUnlockedAt: (date) => `Unlocked ${date}`,
     achLocked: "Locked",
@@ -376,6 +378,8 @@ const LANG = {
     statsResetBtn: "重置统计",
     statsResetConfirm: "确认重置全部终身统计？无法撤销。",
     statsSectionAchievements: "成就",
+    statsTabStats: "统计",
+    statsTabAchievements: "成就",
     achToastUnlocked: (name) => `🏆 解锁成就：${name}`,
     achUnlockedAt: (date) => `解锁于 ${date}`,
     achLocked: "未解锁",

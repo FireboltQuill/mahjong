@@ -23,6 +23,8 @@ function MahjongGame() {
   // toastQueue holds entries pending display (one at a time, ~2.5s each).
   const [achievements, setAchievements] = useState(() => loadAchievements());
   const [toastQueue, setToastQueue] = useState([]);
+  // Stats modal: "stats" or "achievements" tab. Reset to "stats" on open.
+  const [statsTab, setStatsTab] = useState("stats");
   const [showAdmin, setShowAdmin] = useState(false);
   const [adminInput, setAdminInput] = useState(null);
   const [adminTab, setAdminTab] = useState("state"); // "state" | "names"
@@ -851,6 +853,7 @@ function MahjongGame() {
   function openStats() {
     setStats(loadLifetime());
     setAchievements(loadAchievements());
+    setStatsTab("stats");
     setShowStats(true);
   }
   function resetStats() {
@@ -1225,38 +1228,56 @@ function MahjongGame() {
             <h2 style={S.statsTitle}>{L.statsTitle}</h2>
             <button tabIndex={-1} style={S.menuBtn} onClick={() => setShowStats(false)}>{L.statsClose}</button>
           </div>
+          <div style={S.tabBar}>
+            {[
+              ["stats", L.statsTabStats],
+              ["achievements", L.statsTabAchievements],
+            ].map(([id, label]) => (
+              <button
+                key={id}
+                tabIndex={-1}
+                style={{ ...S.tabBtn, ...(statsTab === id ? S.tabBtnActive : {}) }}
+                onClick={() => setStatsTab(id)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <div style={S.statsScroll}>
-            <div style={S.statsSection}>
-              <div style={S.statsSectionHeader}>{L.statsSectionGames}</div>
-              {row(L.lblGamesPlayed, fmtN(stats.gamesPlayed))}
-              {row(L.lblGamesWon, fmtN(stats.gamesWon))}
-              {row(L.lblWinRate, fmtPct(stats.gamesWon, stats.gamesPlayed))}
-            </div>
-            <div style={S.statsSection}>
-              <div style={S.statsSectionHeader}>{L.statsSectionWins}</div>
-              {row(L.lblRoundsPlayed, fmtN(stats.roundsPlayed))}
-              {row(L.lblRoundsWon, fmtN(stats.roundsWon))}
-              {row(L.lblSmallHu, fmtN(stats.smallHu))}
-              {row(L.lblLargeHu, fmtN(stats.largeHu))}
-              {row(L.lblZimoHu, fmtN(stats.zimoHu))}
-              {row(L.lblSevenPairsHu, fmtN(stats.sevenPairsHu))}
-              {row(L.lblRoundsDianpao, fmtN(stats.roundsDianpaoGiven))}
-            </div>
-            <div style={S.statsSection}>
-              <div style={S.statsSectionHeader}>{L.statsSectionRecords}</div>
-              {row(L.lblBiggestGain, fmtSigned(stats.biggestSingleGain), "gain")}
-              {row(L.lblBiggestLoss, fmtSigned(stats.biggestSingleLoss), "loss")}
-              {row(L.lblBestBalance, fmtN(stats.bestEndingBalance))}
-              {row(L.lblWorstBalance, fmtN(stats.worstEndingBalance))}
-              {row(L.lblTotalNet, fmtSigned(stats.totalScoreNet), "net")}
-            </div>
-            <div style={S.statsSection}>
-              <div style={S.statsSectionHeader}>{L.statsSectionStreaks}</div>
-              {row(L.lblCurrentStreak, fmtN(stats.currentWinStreak))}
-              {row(L.lblLongestStreak, fmtN(stats.longestWinStreak))}
-            </div>
-            <div style={S.statsSection}>
-              <div style={S.statsSectionHeader}>{L.statsSectionAchievements}</div>
+            {statsTab === "stats" && (
+              <>
+                <div style={S.statsSection}>
+                  <div style={S.statsSectionHeader}>{L.statsSectionGames}</div>
+                  {row(L.lblGamesPlayed, fmtN(stats.gamesPlayed))}
+                  {row(L.lblGamesWon, fmtN(stats.gamesWon))}
+                  {row(L.lblWinRate, fmtPct(stats.gamesWon, stats.gamesPlayed))}
+                </div>
+                <div style={S.statsSection}>
+                  <div style={S.statsSectionHeader}>{L.statsSectionWins}</div>
+                  {row(L.lblRoundsPlayed, fmtN(stats.roundsPlayed))}
+                  {row(L.lblRoundsWon, fmtN(stats.roundsWon))}
+                  {row(L.lblSmallHu, fmtN(stats.smallHu))}
+                  {row(L.lblLargeHu, fmtN(stats.largeHu))}
+                  {row(L.lblZimoHu, fmtN(stats.zimoHu))}
+                  {row(L.lblSevenPairsHu, fmtN(stats.sevenPairsHu))}
+                  {row(L.lblRoundsDianpao, fmtN(stats.roundsDianpaoGiven))}
+                </div>
+                <div style={S.statsSection}>
+                  <div style={S.statsSectionHeader}>{L.statsSectionRecords}</div>
+                  {row(L.lblBiggestGain, fmtSigned(stats.biggestSingleGain), "gain")}
+                  {row(L.lblBiggestLoss, fmtSigned(stats.biggestSingleLoss), "loss")}
+                  {row(L.lblBestBalance, fmtN(stats.bestEndingBalance))}
+                  {row(L.lblWorstBalance, fmtN(stats.worstEndingBalance))}
+                  {row(L.lblTotalNet, fmtSigned(stats.totalScoreNet), "net")}
+                </div>
+                <div style={S.statsSection}>
+                  <div style={S.statsSectionHeader}>{L.statsSectionStreaks}</div>
+                  {row(L.lblCurrentStreak, fmtN(stats.currentWinStreak))}
+                  {row(L.lblLongestStreak, fmtN(stats.longestWinStreak))}
+                </div>
+              </>
+            )}
+            {statsTab === "achievements" && (
               <div style={S.achGrid}>
                 {ACHIEVEMENTS.map((ach) => {
                   const unlockedAt = achievements.unlocked[ach.id];
@@ -1271,11 +1292,13 @@ function MahjongGame() {
                   );
                 })}
               </div>
+            )}
+          </div>
+          {statsTab === "stats" && (
+            <div style={S.statsFooter}>
+              <button tabIndex={-1} style={S.statsResetBtn} onClick={resetStats}>{L.statsResetBtn}</button>
             </div>
-          </div>
-          <div style={S.statsFooter}>
-            <button tabIndex={-1} style={S.statsResetBtn} onClick={resetStats}>{L.statsResetBtn}</button>
-          </div>
+          )}
         </div>
       </div>
     );
