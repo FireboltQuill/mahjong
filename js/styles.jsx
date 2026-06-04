@@ -132,6 +132,24 @@ function makeStyles(vw, vh) {
     cursor: "pointer", outline: "none",
     fontSize: ts(12), fontWeight: "bold", letterSpacing: 1,
   },
+  // Setup modal — opens when user clicks Edit on the summary line
+  setupPanel: {
+    background: `linear-gradient(145deg, ${bgLight}, ${bg})`, border: `2px solid ${gold}`,
+    borderRadius: s(14), padding: 0, maxWidth: s(420), width: "92%", maxHeight: "88vh",
+    boxShadow: "0 24px 80px rgba(0,0,0,0.6)", display: "flex", flexDirection: "column",
+  },
+  setupModalHeader: {
+    display: "flex", justifyContent: "space-between", alignItems: "center",
+    padding: `${s(14)}px ${s(20)}px`, borderBottom: `1px solid rgba(201,169,97,0.2)`, flexShrink: 0,
+  },
+  setupModalTitle: { color: gold, fontSize: s(20), margin: 0, letterSpacing: 2 },
+  setupModalContent: {
+    overflowY: "auto", padding: `${s(16)}px ${s(20)}px`, flex: 1,
+  },
+  setupModalFooter: {
+    display: "flex", justifyContent: "center",
+    padding: `${s(10)}px ${s(20)}px`, borderTop: `1px solid rgba(201,169,97,0.2)`, flexShrink: 0,
+  },
   // Compact icon-only buttons for secondary menu actions (Help, Stats,
   // Names, Admin). The full label appears as a title tooltip on hover.
   menuIconBtn: {
