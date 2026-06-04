@@ -170,6 +170,8 @@ const LANG = {
     statsSectionStreaks: "Streaks",
     statsResetBtn: "Reset Stats",
     statsResetConfirm: "Reset all lifetime stats? This cannot be undone.",
+    statsResetAchievementsBtn: "Reset Achievements",
+    statsResetAchievementsConfirm: "Reset all unlocked achievements? This cannot be undone.",
     // Achievements (spec §8)
     statsSectionAchievements: "Achievements",
     statsTabStats: "Stats",
@@ -377,6 +379,8 @@ const LANG = {
     statsSectionStreaks: "连胜",
     statsResetBtn: "重置统计",
     statsResetConfirm: "确认重置全部终身统计？无法撤销。",
+    statsResetAchievementsBtn: "重置成就",
+    statsResetAchievementsConfirm: "确认重置全部已解锁成就？无法撤销。",
     statsSectionAchievements: "成就",
     statsTabStats: "统计",
     statsTabAchievements: "成就",
