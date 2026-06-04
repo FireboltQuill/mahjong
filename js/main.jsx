@@ -25,6 +25,9 @@ function MahjongGame() {
   const [toastQueue, setToastQueue] = useState([]);
   // Stats modal: "stats" or "achievements" tab. Reset to "stats" on open.
   const [statsTab, setStatsTab] = useState("stats");
+  // Daily challenge modal (spec §9.9).
+  const [showDaily, setShowDaily] = useState(false);
+  const [dailyData, setDailyData] = useState(() => loadDaily());
   const [showAdmin, setShowAdmin] = useState(false);
   const [adminInput, setAdminInput] = useState(null);
   const [adminTab, setAdminTab] = useState("state"); // "state" | "names"
@@ -60,8 +63,11 @@ function MahjongGame() {
   // written to localStorage. hasResumeSave drives the menu UI. The refs
   // are accessed from lifecycle handlers and the debounced save effect.
   const [gameStarted, setGameStarted] = useState(false);
+  // Resume schema v=2 (spec §6.3, §9.11). v=1 saves contained random
+  // base-36 tile ids that don't match the §9.4 deterministic format, so
+  // legacy saves are discarded by version mismatch in loadJson.
   const [hasResumeSave, setHasResumeSave] = useState(() => {
-    const save = loadJson("mahjong_in_progress", 1, null);
+    const save = loadJson("mahjong_in_progress", 2, null);
     return save !== null;
   });
   const stateRef = useRef(state);
@@ -163,7 +169,7 @@ function MahjongGame() {
       return;
     }
     saveJson("mahjong_in_progress", {
-      v: 1,
+      v: 2,  // §9.11 — bumped from v=1 when deterministic tile ids shipped
       state: slimState(stateRef.current),
       lang: langRef.current,
       difficulty: diffRef.current,
@@ -236,6 +242,13 @@ function MahjongGame() {
     next.lifetimeUpdatedFor = state.gameId;
     saveLifetime(next);
     setStats(next);
+    // Spec §9.10 — record today's daily result BEFORE achievements run
+    // so the streak walker in daily_win_streak_7's predicate sees the
+    // freshly written entry.
+    let dailyAfter = null;
+    if (state.dailyGame && state.dailyDate) {
+      dailyAfter = recordDailyResult(state, state.dailyDate);
+    }
     // §8.7 — achievements step runs against post-merge lifetime so
     // wins_10 / streak_5 / etc. see the freshly written totals. The
     // lifetimeUpdatedFor short-circuit above guards us against Strict
@@ -247,6 +260,7 @@ function MahjongGame() {
       lifetime: next,
       roundResults: state.roundResults || [],
       achievements: prevAch,
+      dailyResults: dailyAfter ? dailyAfter.results : null,
     });
     if (newlyUnlocked.length > 0) {
       const isoDate = new Date().toISOString().slice(0, 10);
@@ -829,7 +843,7 @@ function MahjongGame() {
   // discarding any in-menu settings changes. Called from the menu's
   // Resume Game button. After this, the save effect resumes normally.
   function resumeGame() {
-    const save = loadJson("mahjong_in_progress", 1, null);
+    const save = loadJson("mahjong_in_progress", 2, null);
     if (!save || !save.state) return;
     resumeClearedRef.current = false;
     setHintIdx(null);
@@ -846,6 +860,46 @@ function MahjongGame() {
     setGameOverAcknowledged(false);
     setHasResumeSave(false);
     setGameStarted(true);
+  }
+
+  // Daily challenge (spec §9.9). Opens a modal showing today's status
+  // (played / not played, result + streak), with a button to launch
+  // the daily run. Uses fixed settings: 1 wind round, Expert AI,
+  // training mode forced off.
+  function openDaily() {
+    setDailyData(loadDaily());
+    setShowDaily(true);
+  }
+  // Start (or replay) today's daily challenge. asReplay=true marks the
+  // run as non-recording per spec §9.10 — daily results are written
+  // only on the first qualifying play.
+  function startDailyGame(asReplay) {
+    removeStorageKey("mahjong_in_progress");
+    setHasResumeSave(false);
+    setHintIdx(null);
+    resumeClearedRef.current = false;
+    const dailyDate = todayUtcDate();
+    // Daily seeds are derived from the UTC date so every player sees
+    // the same wall + AI personalities for the same date.
+    const seed = seedFromDate(dailyDate);
+    setState(createInitialState(1, langRef.current, seed, { dailyDate }));
+    // Spec §9.9 — daily forces difficulty Expert and disables training
+    // mode for fairness. The user's menu preferences aren't overwritten
+    // in localStorage; they only override for this session's UI refs.
+    setDifficulty("expert");
+    setTrainingMode(false);
+    setShowDaily(false);
+    setShowMenu(false);
+    setSelectedTileIdx(null);
+    setClaimOptions(null);
+    setRoundOverTab("winner");
+    setGameOverTab("standings");
+    setGameOverAcknowledged(false);
+    setGameStarted(true);
+    // asReplay is currently informational — recordDailyResult already
+    // skips overwriting an existing recorded entry per §9.10. Reserved
+    // for future stamping if non-recording attempts need distinction.
+    void asReplay;
   }
 
   // Lifetime stats modal (spec §7.6). Re-read on open so stats stay
@@ -944,16 +998,39 @@ function MahjongGame() {
   }
   function applyAdmin() {
     setState((prev) => {
+      // Spec §9.4 + Appendix A.5 — collision-floor scan across every
+      // place a tile id can live. Plus prev.usedAdminIds (Appendix A.6)
+      // so admin-minted ids minted in PRIOR admin passes aren't reused.
+      let scannedMax = -1;
+      const scan = (t) => {
+        if (!t) return;
+        const n = parseInt(t.id, 10);
+        if (Number.isFinite(n) && n > scannedMax) scannedMax = n;
+      };
+      for (const pl of prev.players) {
+        for (const t of pl.hand) scan(t);
+        for (const m of pl.openMelds) for (const t of m.tiles) scan(t);
+        for (const t of pl.discards) scan(t);
+      }
+      for (const t of prev.wall) scan(t);
+      scan(prev.lastDiscard);
+      scan(prev.lastDrawn);
+      const usedAdminIds = prev.usedAdminIds || [];
+      const maxUsedAdmin = usedAdminIds.length > 0 ? Math.max(...usedAdminIds) : -1;
+      let nextId = Math.max(scannedMax + 1, 1000, maxUsedAdmin + 1);
+      const mintedThisCall = [];
+      const idGen = () => { const v = nextId++; mintedThisCall.push(v); return v; };
+
       const newPlayers = prev.players.map((p, i) => {
         const inp = adminInput.players[i];
         return {
           ...p,
-          hand: parseTileList(inp.hand),
-          openMelds: parseMeldList(inp.melds),
-          discards: parseTileList(inp.discards),
+          hand: parseTileList(inp.hand, idGen),
+          openMelds: parseMeldList(inp.melds, idGen),
+          discards: parseTileList(inp.discards, idGen),
         };
       });
-      const newWallTiles = parseTileList(adminInput.wall);
+      const newWallTiles = parseTileList(adminInput.wall, idGen);
       // Prepend the user's tiles to the wall, dropping an equal count from the
       // front of the existing wall so length stays bounded.
       const newWall = newWallTiles.length > 0
@@ -988,6 +1065,7 @@ function MahjongGame() {
         // longer faithfully reconstruct the match. Replay (§14.8) excludes
         // adminTouched matches; this flag survives resume saves.
         adminTouched: true,
+        usedAdminIds: [...usedAdminIds, ...mintedThisCall],
         persistRev: prev.persistRev + 1,
       };
     });
@@ -1022,6 +1100,11 @@ function MahjongGame() {
       }
       const windIdx = Math.floor((roundNum - 1) / 4);
       const newRoundWind = SEAT_WINDS[windIdx] || "east";
+      // Spec §9.5 — derive the next round's seed from matchSeed +
+      // roundNumber. roundSeeds map accumulates all per-round seeds so
+      // replay (Phase 9b) can reconstruct any round in isolation.
+      const newRoundSeed = seedForRound(prev.matchSeed, roundNum);
+      const newRoundSeeds = { ...prev.roundSeeds, [roundNum]: newRoundSeed };
       // initRound returns {...gameInfo, ...overrides}, so persistRev
       // from the spread is the prev value; bump on top of the result.
       const next = initRound({
@@ -1029,7 +1112,8 @@ function MahjongGame() {
         dealer: newDealer,
         roundWind: newRoundWind,
         roundNumber: roundNum,
-      }, langRef.current);
+        roundSeeds: newRoundSeeds,
+      }, langRef.current, newRoundSeed);
       return { ...next, persistRev: prev.persistRev + 1 };
     });
   }
@@ -1449,6 +1533,54 @@ function MahjongGame() {
   }
 
   // ============================================================
+  // DAILY CHALLENGE OVERLAY (spec §9.9)
+  // ============================================================
+  function renderDailyOverlay() {
+    const today = todayUtcDate();
+    const entry = dailyData.results[today];
+    const streak = dailyWinStreakAsOf(dailyData, today);
+    // Hours/minutes until next UTC midnight, used for the reset hint.
+    const now = new Date();
+    const nextMid = new Date(now);
+    nextMid.setUTCDate(nextMid.getUTCDate() + 1);
+    nextMid.setUTCHours(0, 0, 0, 0);
+    const msLeft = nextMid - now;
+    const hLeft = Math.floor(msLeft / 3_600_000);
+    const mLeft = Math.floor((msLeft % 3_600_000) / 60_000);
+    return (
+      <div style={S.overlay} onClick={() => setShowDaily(false)}>
+        <div style={S.setupPanel} onClick={(e) => e.stopPropagation()}>
+          <div style={S.setupModalHeader}>
+            <h2 style={S.setupModalTitle}>{L.dailyChallengeTitle}</h2>
+            <button tabIndex={-1} style={S.menuBtn} onClick={() => setShowDaily(false)}>{L.dailyClose}</button>
+          </div>
+          <div style={S.setupModalContent}>
+            <p style={S.resumeNote}>{L.dailyToday} {today}</p>
+            <p style={S.resumeNote}>{L.dailyResetIn(hLeft, mLeft)}</p>
+            <p style={{ ...S.resumeNote, marginTop: 12 }}>
+              {entry ? L.dailyAlreadyPlayed : L.dailyNotPlayed}
+            </p>
+            {entry && (
+              <>
+                <p style={S.resumeNote}>{entry.won ? L.dailyResultWon : L.dailyResultLost}</p>
+                <p style={S.resumeNote}>{L.dailyFinalScore(entry.finalScore)}</p>
+                <p style={S.resumeNote}>{L.dailyRank(entry.rank)}</p>
+              </>
+            )}
+            <p style={{ ...S.resumeNote, marginTop: 8 }}>{L.dailyStreak(streak)}</p>
+            <p style={{ ...S.resumeNote, marginTop: 12, fontStyle: "italic" }}>{L.dailyNote}</p>
+          </div>
+          <div style={S.setupModalFooter}>
+            <button tabIndex={-1} style={S.setupDoneBtn} onClick={() => startDailyGame(!!entry)}>
+              {entry ? L.dailyReplayBtn : L.dailyStartBtn}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================================
   // ACHIEVEMENT TOAST (spec §8.8)
   // ============================================================
   function renderAchievementToast(ach) {
@@ -1662,6 +1794,7 @@ function MahjongGame() {
             </div>
             <div style={S.menuHelpRow}>
               <button tabIndex={-1} style={S.langBtn} onClick={() => setShowHelp(true)}>{L.howToPlay}</button>
+              <button tabIndex={-1} style={S.langBtn} onClick={openDaily}>{L.dailyChallengeBtn}</button>
               <button tabIndex={-1} style={S.langBtn} onClick={openStats}>{L.statsBtn}</button>
               <button tabIndex={-1} style={S.langBtn} onClick={() => setShowNames(true)}>{L.manageNamesBtn}</button>
               <button tabIndex={-1} style={S.langBtn} onClick={startWithAdmin}>{L.adminMenuBtn}</button>
@@ -1672,6 +1805,7 @@ function MahjongGame() {
       {showHelp && renderHelpOverlay()}
       {showStats && renderStatsOverlay()}
       {showSetup && renderSetupOverlay()}
+      {showDaily && renderDailyOverlay()}
       {showAdmin && renderAdminOverlay()}
       {showNames && renderNamesOverlay()}
       {toastQueue.length > 0 && renderAchievementToast(toastQueue[0])}
@@ -1707,7 +1841,9 @@ function MahjongGame() {
           {isPlayerTurn && canDraw && <span style={S.statusTextYou}>{L.turnDraw}</span>}
           {isPlayerTurn && canDiscard && <span style={S.statusTextYou}>{L.turnDiscard}</span>}
           <button tabIndex={-1} style={S.langBtn} onClick={() => setLang(lang === "en" ? "zh" : "en")}>{L.langToggle}</button>
-          <button tabIndex={-1} style={S.menuBtn} onClick={() => openAdmin()}>{L.adminBtn}</button>
+          {!state.dailyGame && (
+            <button tabIndex={-1} style={S.menuBtn} onClick={() => openAdmin()}>{L.adminBtn}</button>
+          )}
           <button tabIndex={-1} style={S.menuBtn} onClick={() => setShowHelp(true)}>?</button>
           <button tabIndex={-1} style={S.menuBtn} onClick={() => setShowMenu(true)}>☰</button>
         </div>
@@ -2264,6 +2400,7 @@ function MahjongGame() {
     {showHelp && renderHelpOverlay()}
     {showStats && renderStatsOverlay()}
     {showSetup && renderSetupOverlay()}
+    {showDaily && renderDailyOverlay()}
     {showAdmin && renderAdminOverlay()}
     {showNames && renderNamesOverlay()}
     {toastQueue.length > 0 && renderAchievementToast(toastQueue[0])}

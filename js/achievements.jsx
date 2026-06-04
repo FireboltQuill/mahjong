@@ -158,6 +158,31 @@ const ACHIEVEMENTS = [
       return humanWon && state.hintUsedThisGame === false;
     },
   },
+  // Daily-only achievements — mode: "daily" framework filter ensures
+  // these only run when state.dailyGame === true.
+  {
+    id: "daily_win_1",
+    icon: "📅",
+    nameKey: "achDailyWin1Name",
+    descKey: "achDailyWin1Desc",
+    mode: "daily",
+    predicate: ({ state }) =>
+      state.scores[PLAYER_IDX] === Math.max(...state.scores),
+  },
+  {
+    id: "daily_win_streak_7",
+    icon: "📆",
+    nameKey: "achDailyWinStreak7Name",
+    descKey: "achDailyWinStreak7Desc",
+    mode: "daily",
+    // The daily/main flow records the current result via recordDailyResult
+    // BEFORE checkAchievements runs, so dailyWinStreakAsOf already
+    // includes today's win.
+    predicate: ({ state, dailyResults }) =>
+      state.scores[PLAYER_IDX] === Math.max(...state.scores) &&
+      dailyResults &&
+      dailyWinStreakAsOf(dailyResults, state.dailyDate) >= 7,
+  },
 ];
 
 // §8.4 mode framework: filter predicates by game mode before running

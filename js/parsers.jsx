@@ -13,23 +13,27 @@ const ADMIN_HONOR_MAP = {
   R: ["dragon", "red"], G: ["dragon", "green"], P: ["dragon", "white"],
 };
 
-function parseTileSpec(spec) {
+// Admin-side parser. idGen is required so each minted tile gets a
+// caller-controlled deterministic id (spec §9.4). main.jsx's applyAdmin
+// computes a starting id via the §9.4 collision-floor scan and passes
+// an incrementing factory in.
+function parseTileSpec(spec, idGen) {
   if (!spec) return null;
   const t = spec.trim();
   if (!t) return null;
   const suitMatch = /^([bcd])([1-9])$/i.exec(t);
   if (suitMatch) {
     const suitMap = { b: "bamboo", c: "characters", d: "dots" };
-    return createTile(suitMap[suitMatch[1].toLowerCase()], parseInt(suitMatch[2], 10), null);
+    return createTile(suitMap[suitMatch[1].toLowerCase()], parseInt(suitMatch[2], 10), null, idGen());
   }
   const honor = ADMIN_HONOR_MAP[t.toUpperCase()];
-  if (honor) return createTile(honor[0], null, honor[1]);
+  if (honor) return createTile(honor[0], null, honor[1], idGen());
   return null;
 }
 
-function parseTileList(input) {
+function parseTileList(input, idGen) {
   if (!input) return [];
-  return input.split(/[\s,]+/).filter(Boolean).map(parseTileSpec).filter(Boolean);
+  return input.split(/[\s,]+/).filter(Boolean).map((s) => parseTileSpec(s, idGen)).filter(Boolean);
 }
 
 function tileToSpec(t) {
@@ -38,7 +42,7 @@ function tileToSpec(t) {
   return ({ bamboo: "b", characters: "c", dots: "d" }[t.suit]) + t.rank;
 }
 
-function parseMeld(meldStr) {
+function parseMeld(meldStr, idGen) {
   if (!meldStr) return null;
   const trimmed = meldStr.trim();
   if (!trimmed) return null;
@@ -51,15 +55,15 @@ function parseMeld(meldStr) {
     type = type.slice(0, -1).trim();
   }
   if (!["peng", "chi", "gang"].includes(type)) return null;
-  const tiles = parseTileList(trimmed.slice(colonIdx + 1));
+  const tiles = parseTileList(trimmed.slice(colonIdx + 1), idGen);
   if (tiles.length === 0) return null;
   return { type, tiles, claimed: !concealed, concealed };
 }
 
 // Melds are separated by ';' (tile lists inside a meld are space-separated).
-function parseMeldList(input) {
+function parseMeldList(input, idGen) {
   if (!input) return [];
-  return input.split(";").map((s) => s.trim()).filter(Boolean).map(parseMeld).filter(Boolean);
+  return input.split(";").map((s) => s.trim()).filter(Boolean).map((s) => parseMeld(s, idGen)).filter(Boolean);
 }
 
 function meldToSpec(m) {
