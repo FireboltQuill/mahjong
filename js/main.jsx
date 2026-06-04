@@ -360,6 +360,35 @@ function MahjongGame() {
         winTile = replacementTile;
       }
 
+      // Check for promoted gang (drew the 4th tile that matches an open
+      // peng). Auto-promotes; same shape as the concealed branch above.
+      // Only one promotion per draw — chains are an edge case.
+      const playerAfterCGang = newSt.players[p];
+      const pGangs = findPromotedGangs(playerAfterCGang);
+      if (pGangs.length > 0) {
+        const pg = pGangs[0];
+        const promotedMeld = { ...playerAfterCGang.openMelds[pg.meldIdx], type: "gang", tiles: [...playerAfterCGang.openMelds[pg.meldIdx].tiles, pg.tile] };
+        const newMelds = playerAfterCGang.openMelds.map((m, i) => i === pg.meldIdx ? promotedMeld : m);
+        const handMinusTile = playerAfterCGang.hand.filter((t) => t.id !== pg.tile.id);
+
+        if (newSt.wall.length === 0) {
+          return { ...newSt, isDraw: true, log: [...newSt.log, _L().logExhaust] };
+        }
+        const replacementTile = newSt.wall[0];
+        const afterWall = newSt.wall.slice(1);
+        const handAfterReplacement = sortHand([...handMinusTile, replacementTile]);
+
+        newPlayers[p] = { ...newPlayers[p], hand: handAfterReplacement, openMelds: newMelds };
+        newSt = {
+          ...newSt,
+          players: [...newPlayers],
+          wall: afterWall,
+          lastDrawn: replacementTile,
+          log: [...newSt.log, _L().logPromotedGang(_SL()[p], _TN(pg.tile))],
+        };
+        winTile = replacementTile;
+      }
+
       // Check self-draw win
       const checkPlayer = newSt.players[p];
       if (validateHu(checkPlayer)) {
@@ -665,6 +694,43 @@ function MahjongGame() {
     });
   }
 
+  // Promoted Gang (加杠): convert an open peng to a gang using a 4th
+  // matching tile from hand, then draw a replacement. Same shape as
+  // handleDeclareConcealedGang — both must run during the human's
+  // discard window and both consume the wall's next tile.
+  function handleDeclarePromotedGang(meldIdx, tile) {
+    setState((prev) => {
+      if (prev.currentTurn !== PLAYER_IDX || prev.phase !== "discard" || !prev.turnDrawn) return prev;
+      const player = prev.players[PLAYER_IDX];
+      const meld = player.openMelds[meldIdx];
+      if (!meld || meld.type !== "peng") return prev;
+      if (tileKey(meld.tiles[0]) !== tileKey(tile)) return prev;
+      if (!player.hand.some((t) => t.id === tile.id)) return prev;
+
+      const newHand = player.hand.filter((t) => t.id !== tile.id);
+      const newMeld = { ...meld, type: "gang", tiles: [...meld.tiles, tile] };
+      const newMelds = player.openMelds.map((m, i) => i === meldIdx ? newMeld : m);
+
+      if (prev.wall.length === 0) {
+        return { ...prev, isDraw: true, log: [...prev.log, _L().logExhaust], persistRev: prev.persistRev + 1 };
+      }
+      const replacement = prev.wall[0];
+      const afterWall = prev.wall.slice(1);
+      const afterHand = sortHand([...newHand, replacement]);
+      const newPlayers = prev.players.map((pl, i) =>
+        i === PLAYER_IDX ? { ...pl, hand: afterHand, openMelds: newMelds } : pl
+      );
+      return {
+        ...prev,
+        players: newPlayers,
+        wall: afterWall,
+        lastDrawn: replacement,
+        log: [...prev.log, _L().logYouPromotedGang(_TN(tile))],
+        persistRev: prev.persistRev + 1,
+      };
+    });
+  }
+
   // Training-mode hint: compute the expert-discard recommendation for
   // the human's current hand and highlight that tile. Idempotent —
   // clicking Hint repeatedly recomputes (deterministic since the hand
@@ -930,6 +996,7 @@ function MahjongGame() {
   const canDiscard = isPlayerTurn && state.phase === "discard" && state.turnDrawn;
   const canHu = isPlayerTurn && state.phase === "discard" && state.turnDrawn && validateHu(player);
   const concealedGangs = isPlayerTurn && state.phase === "discard" && state.turnDrawn ? findConcealedGangs(player.hand) : [];
+  const promotedGangs = isPlayerTurn && state.phase === "discard" && state.turnDrawn ? findPromotedGangs(player) : [];
   const roundOver = state.winner !== null || state.isDraw;
   const gameOver = roundOver && state.roundNumber >= state.totalRounds;
 
@@ -1699,8 +1766,13 @@ function MahjongGame() {
             <button tabIndex={-1} style={S.actionBtnWin} onClick={handleDeclareHu}>{L.declareHu}</button>
           )}
           {concealedGangs.map((g, i) => (
-            <button tabIndex={-1} key={i} style={S.actionBtn} onClick={() => handleDeclareConcealedGang(g.tiles)}>
+            <button tabIndex={-1} key={`cg${i}`} style={S.actionBtn} onClick={() => handleDeclareConcealedGang(g.tiles)}>
               {L.gangBtn(TN(g.tiles[0]))}
+            </button>
+          ))}
+          {promotedGangs.map((g, i) => (
+            <button tabIndex={-1} key={`pg${i}`} style={S.actionBtn} onClick={() => handleDeclarePromotedGang(g.meldIdx, g.tile)}>
+              {L.promotedGangBtn(TN(g.tile))}
             </button>
           ))}
           {trainingMode && canDiscard && (
