@@ -446,7 +446,6 @@ function makeStyles(vw, vh) {
   statsKvValueL: { color: gold, fontWeight: "bold", fontFamily: "monospace" },
   statsValuePositive: { color: "#7ec78a" },
   statsValueNegative: { color: "#d4a0a0" },
-  statsEmptyMsg: { color: greenDim, fontStyle: "italic", textAlign: "center", padding: `${s(24)}px ${s(12)}px` },
   statsFooter: {
     display: "flex", justifyContent: "flex-end", gap: s(10),
     padding: `${s(10)}px ${s(20)}px`, borderTop: `1px solid rgba(201,169,97,0.2)`, flexShrink: 0,
