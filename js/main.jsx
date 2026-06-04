@@ -1163,7 +1163,6 @@ function MahjongGame() {
       if (!denom) return dash;
       return `${Math.round((num / denom) * 100)}%`;
     };
-    const isEmpty = stats.gamesPlayed === 0;
 
     function valueStyle(n, kind) {
       if (n === null || n === undefined || n === 0) return S.statsKvValueL;
@@ -1192,41 +1191,35 @@ function MahjongGame() {
             <button tabIndex={-1} style={S.menuBtn} onClick={() => setShowStats(false)}>{L.statsClose}</button>
           </div>
           <div style={S.statsScroll}>
-            {isEmpty ? (
-              <p style={S.statsEmptyMsg}>{L.statsEmpty}</p>
-            ) : (
-              <>
-                <div style={S.statsSection}>
-                  <div style={S.statsSectionHeader}>{L.statsSectionGames}</div>
-                  {row(L.lblGamesPlayed, fmtN(stats.gamesPlayed))}
-                  {row(L.lblGamesWon, fmtN(stats.gamesWon))}
-                  {row(L.lblWinRate, fmtPct(stats.gamesWon, stats.gamesPlayed))}
-                </div>
-                <div style={S.statsSection}>
-                  <div style={S.statsSectionHeader}>{L.statsSectionWins}</div>
-                  {row(L.lblRoundsPlayed, fmtN(stats.roundsPlayed))}
-                  {row(L.lblRoundsWon, fmtN(stats.roundsWon))}
-                  {row(L.lblSmallHu, fmtN(stats.smallHu))}
-                  {row(L.lblLargeHu, fmtN(stats.largeHu))}
-                  {row(L.lblZimoHu, fmtN(stats.zimoHu))}
-                  {row(L.lblSevenPairsHu, fmtN(stats.sevenPairsHu))}
-                  {row(L.lblRoundsDianpao, fmtN(stats.roundsDianpaoGiven))}
-                </div>
-                <div style={S.statsSection}>
-                  <div style={S.statsSectionHeader}>{L.statsSectionRecords}</div>
-                  {row(L.lblBiggestGain, fmtSigned(stats.biggestSingleGain), "gain")}
-                  {row(L.lblBiggestLoss, fmtSigned(stats.biggestSingleLoss), "loss")}
-                  {row(L.lblBestBalance, fmtN(stats.bestEndingBalance))}
-                  {row(L.lblWorstBalance, fmtN(stats.worstEndingBalance))}
-                  {row(L.lblTotalNet, fmtSigned(stats.totalScoreNet), "net")}
-                </div>
-                <div style={S.statsSection}>
-                  <div style={S.statsSectionHeader}>{L.statsSectionStreaks}</div>
-                  {row(L.lblCurrentStreak, fmtN(stats.currentWinStreak))}
-                  {row(L.lblLongestStreak, fmtN(stats.longestWinStreak))}
-                </div>
-              </>
-            )}
+            <div style={S.statsSection}>
+              <div style={S.statsSectionHeader}>{L.statsSectionGames}</div>
+              {row(L.lblGamesPlayed, fmtN(stats.gamesPlayed))}
+              {row(L.lblGamesWon, fmtN(stats.gamesWon))}
+              {row(L.lblWinRate, fmtPct(stats.gamesWon, stats.gamesPlayed))}
+            </div>
+            <div style={S.statsSection}>
+              <div style={S.statsSectionHeader}>{L.statsSectionWins}</div>
+              {row(L.lblRoundsPlayed, fmtN(stats.roundsPlayed))}
+              {row(L.lblRoundsWon, fmtN(stats.roundsWon))}
+              {row(L.lblSmallHu, fmtN(stats.smallHu))}
+              {row(L.lblLargeHu, fmtN(stats.largeHu))}
+              {row(L.lblZimoHu, fmtN(stats.zimoHu))}
+              {row(L.lblSevenPairsHu, fmtN(stats.sevenPairsHu))}
+              {row(L.lblRoundsDianpao, fmtN(stats.roundsDianpaoGiven))}
+            </div>
+            <div style={S.statsSection}>
+              <div style={S.statsSectionHeader}>{L.statsSectionRecords}</div>
+              {row(L.lblBiggestGain, fmtSigned(stats.biggestSingleGain), "gain")}
+              {row(L.lblBiggestLoss, fmtSigned(stats.biggestSingleLoss), "loss")}
+              {row(L.lblBestBalance, fmtN(stats.bestEndingBalance))}
+              {row(L.lblWorstBalance, fmtN(stats.worstEndingBalance))}
+              {row(L.lblTotalNet, fmtSigned(stats.totalScoreNet), "net")}
+            </div>
+            <div style={S.statsSection}>
+              <div style={S.statsSectionHeader}>{L.statsSectionStreaks}</div>
+              {row(L.lblCurrentStreak, fmtN(stats.currentWinStreak))}
+              {row(L.lblLongestStreak, fmtN(stats.longestWinStreak))}
+            </div>
           </div>
           <div style={S.statsFooter}>
             <button tabIndex={-1} style={S.statsResetBtn} onClick={resetStats}>{L.statsResetBtn}</button>
