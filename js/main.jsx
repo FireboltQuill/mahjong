@@ -1470,10 +1470,10 @@ function MahjongGame() {
               <button tabIndex={-1} style={S.langBtn} onClick={() => setLang(lang === "en" ? "zh" : "en")}>{L.langToggle}</button>
             </div>
             <div style={S.menuHelpRow}>
-              <button tabIndex={-1} style={S.langBtn} onClick={() => setShowHelp(true)}>{L.howToPlay}</button>
-              <button tabIndex={-1} style={S.langBtn} onClick={openStats}>{L.statsBtn}</button>
-              <button tabIndex={-1} style={S.langBtn} onClick={() => setShowNames(true)}>{L.manageNamesBtn}</button>
-              <button tabIndex={-1} style={S.langBtn} onClick={startWithAdmin}>{L.adminMenuBtn}</button>
+              <button tabIndex={-1} style={S.menuIconBtn} onClick={() => setShowHelp(true)} title={L.howToPlay} aria-label={L.howToPlay}>?</button>
+              <button tabIndex={-1} style={S.menuIconBtn} onClick={openStats} title={L.statsBtn} aria-label={L.statsBtn}>📊</button>
+              <button tabIndex={-1} style={S.menuIconBtn} onClick={() => setShowNames(true)} title={L.manageNamesBtn} aria-label={L.manageNamesBtn}>👥</button>
+              <button tabIndex={-1} style={S.menuIconBtn} onClick={startWithAdmin} title={L.adminMenuBtn} aria-label={L.adminMenuBtn}>🔧</button>
             </div>
           </div>
           <div style={S.menuAside}>
