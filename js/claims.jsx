@@ -67,3 +67,19 @@ function findConcealedGangs(hand) {
   return gangs;
 }
 
+// Promoted Gang (加杠): the player has an open peng and a 4th matching
+// tile in hand. The peng meld upgrades to a gang and the player draws a
+// replacement, same as concealed gang. Returns one candidate per
+// promotable peng.
+function findPromotedGangs(player) {
+  const out = [];
+  for (let i = 0; i < player.openMelds.length; i++) {
+    const m = player.openMelds[i];
+    if (m.type !== "peng") continue;
+    const k = tileKey(m.tiles[0]);
+    const handTile = player.hand.find((t) => tileKey(t) === k);
+    if (handTile) out.push({ meldIdx: i, tile: handTile, pengTiles: m.tiles });
+  }
+  return out;
+}
+
