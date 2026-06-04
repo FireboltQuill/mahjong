@@ -1244,8 +1244,8 @@ function MahjongGame() {
             ))}
           </div>
           <div style={S.statsScroll}>
-            {statsTab === "stats" && (
-              <>
+            <div style={S.tabPanes}>
+              <div style={{ ...S.tabPane, ...(statsTab !== "stats" ? S.tabPaneHidden : {}) }} aria-hidden={statsTab !== "stats"}>
                 <div style={S.statsSection}>
                   <div style={S.statsSectionHeader}>{L.statsSectionGames}</div>
                   {row(L.lblGamesPlayed, fmtN(stats.gamesPlayed))}
@@ -1275,30 +1275,28 @@ function MahjongGame() {
                   {row(L.lblCurrentStreak, fmtN(stats.currentWinStreak))}
                   {row(L.lblLongestStreak, fmtN(stats.longestWinStreak))}
                 </div>
-              </>
-            )}
-            {statsTab === "achievements" && (
-              <div style={S.achGrid}>
-                {ACHIEVEMENTS.map((ach) => {
-                  const unlockedAt = achievements.unlocked[ach.id];
-                  const isUnlocked = !!unlockedAt;
-                  return (
-                    <div key={ach.id} style={{ ...S.achBadge, ...(isUnlocked ? {} : S.achBadgeLocked) }}>
-                      <div style={S.achIcon}>{ach.icon}</div>
-                      <div style={S.achName}>{L[ach.nameKey]}</div>
-                      <div style={S.achDesc}>{L[ach.descKey]}</div>
-                      {isUnlocked && <div style={S.achDate}>{L.achUnlockedAt(unlockedAt)}</div>}
-                    </div>
-                  );
-                })}
               </div>
-            )}
-          </div>
-          {statsTab === "stats" && (
-            <div style={S.statsFooter}>
-              <button tabIndex={-1} style={S.statsResetBtn} onClick={resetStats}>{L.statsResetBtn}</button>
+              <div style={{ ...S.tabPane, ...(statsTab !== "achievements" ? S.tabPaneHidden : {}) }} aria-hidden={statsTab !== "achievements"}>
+                <div style={S.achGrid}>
+                  {ACHIEVEMENTS.map((ach) => {
+                    const unlockedAt = achievements.unlocked[ach.id];
+                    const isUnlocked = !!unlockedAt;
+                    return (
+                      <div key={ach.id} style={{ ...S.achBadge, ...(isUnlocked ? {} : S.achBadgeLocked) }}>
+                        <div style={S.achIcon}>{ach.icon}</div>
+                        <div style={S.achName}>{L[ach.nameKey]}</div>
+                        <div style={S.achDesc}>{L[ach.descKey]}</div>
+                        {isUnlocked && <div style={S.achDate}>{L.achUnlockedAt(unlockedAt)}</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
-          )}
+          </div>
+          <div style={S.statsFooter}>
+            <button tabIndex={-1} style={S.statsResetBtn} onClick={resetStats}>{L.statsResetBtn}</button>
+          </div>
         </div>
       </div>
     );
