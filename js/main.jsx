@@ -19,6 +19,10 @@ function MahjongGame() {
   // Lifetime stats loaded once at mount and refreshed when the modal
   // opens or after a game-over merge (spec §7).
   const [stats, setStats] = useState(() => loadLifetime());
+  // Phase 4 achievements (§8). achievements is the loaded payload;
+  // toastQueue holds entries pending display (one at a time, ~2.5s each).
+  const [achievements, setAchievements] = useState(() => loadAchievements());
+  const [toastQueue, setToastQueue] = useState([]);
   const [showAdmin, setShowAdmin] = useState(false);
   const [adminInput, setAdminInput] = useState(null);
   const [adminTab, setAdminTab] = useState("state"); // "state" | "names"
@@ -230,8 +234,36 @@ function MahjongGame() {
     next.lifetimeUpdatedFor = state.gameId;
     saveLifetime(next);
     setStats(next);
-    // checkAchievements(next) — wired in Phase 4
+    // §8.7 — achievements step runs against post-merge lifetime so
+    // wins_10 / streak_5 / etc. see the freshly written totals. The
+    // lifetimeUpdatedFor short-circuit above guards us against Strict
+    // Mode double-invocation; the same gameId can't unlock the same
+    // achievement twice.
+    const prevAch = loadAchievements();
+    const newlyUnlocked = checkAchievements({
+      state,
+      lifetime: next,
+      roundResults: state.roundResults || [],
+      achievements: prevAch,
+    });
+    if (newlyUnlocked.length > 0) {
+      const isoDate = new Date().toISOString().slice(0, 10);
+      const nextAch = { v: 1, unlocked: { ...prevAch.unlocked } };
+      for (const a of newlyUnlocked) nextAch.unlocked[a.id] = isoDate;
+      saveAchievements(nextAch);
+      setAchievements(nextAch);
+      setToastQueue((q) => [...q, ...newlyUnlocked]);
+    }
   }, [gameOverAcknowledged, state.gameId]);
+
+  // Toast dismissal effect — show one at a time for ~2.5s.
+  useEffect(() => {
+    if (toastQueue.length === 0) return;
+    const timer = setTimeout(() => {
+      setToastQueue((q) => q.slice(1));
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, [toastQueue]);
 
   // Dynamic styles based on viewport
   const S = useMemo(() => makeStyles(winSize.w, winSize.h), [winSize.w, winSize.h]);
@@ -818,9 +850,12 @@ function MahjongGame() {
   // current even if a game ended while the modal was last closed.
   function openStats() {
     setStats(loadLifetime());
+    setAchievements(loadAchievements());
     setShowStats(true);
   }
   function resetStats() {
+    // §7.6 decision — resetting stats does NOT remove unlocked
+    // achievements. Achievements have a separate reset path if needed.
     if (!window.confirm(L.statsResetConfirm)) return;
     resetLifetime();
     setStats({ ...DEFAULT_LIFETIME_STATS });
@@ -1220,6 +1255,23 @@ function MahjongGame() {
               {row(L.lblCurrentStreak, fmtN(stats.currentWinStreak))}
               {row(L.lblLongestStreak, fmtN(stats.longestWinStreak))}
             </div>
+            <div style={S.statsSection}>
+              <div style={S.statsSectionHeader}>{L.statsSectionAchievements}</div>
+              <div style={S.achGrid}>
+                {ACHIEVEMENTS.map((ach) => {
+                  const unlockedAt = achievements.unlocked[ach.id];
+                  const isUnlocked = !!unlockedAt;
+                  return (
+                    <div key={ach.id} style={{ ...S.achBadge, ...(isUnlocked ? {} : S.achBadgeLocked) }}>
+                      <div style={S.achIcon}>{ach.icon}</div>
+                      <div style={S.achName}>{L[ach.nameKey]}</div>
+                      <div style={S.achDesc}>{L[ach.descKey]}</div>
+                      {isUnlocked && <div style={S.achDate}>{L.achUnlockedAt(unlockedAt)}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
           <div style={S.statsFooter}>
             <button tabIndex={-1} style={S.statsResetBtn} onClick={resetStats}>{L.statsResetBtn}</button>
@@ -1360,6 +1412,18 @@ function MahjongGame() {
             )}
           </div>
         </div>
+      </div>
+    );
+  }
+
+  // ============================================================
+  // ACHIEVEMENT TOAST (spec §8.8)
+  // ============================================================
+  function renderAchievementToast(ach) {
+    return (
+      <div style={S.achToast}>
+        <span style={S.achToastIcon}>{ach.icon}</span>
+        <span>{L.achToastUnlocked(L[ach.nameKey])}</span>
       </div>
     );
   }
@@ -1578,6 +1642,7 @@ function MahjongGame() {
       {showSetup && renderSetupOverlay()}
       {showAdmin && renderAdminOverlay()}
       {showNames && renderNamesOverlay()}
+      {toastQueue.length > 0 && renderAchievementToast(toastQueue[0])}
       </>
     );
   }
@@ -2169,6 +2234,7 @@ function MahjongGame() {
     {showSetup && renderSetupOverlay()}
     {showAdmin && renderAdminOverlay()}
     {showNames && renderNamesOverlay()}
+    {toastQueue.length > 0 && renderAchievementToast(toastQueue[0])}
     </>
   );
 }
