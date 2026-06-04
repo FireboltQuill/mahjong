@@ -38,9 +38,9 @@ function MahjongGame() {
     catch { return false; }
   });
   const [hintIdx, setHintIdx] = useState(null);
-  // Menu setup section is collapsed to a single summary line by default;
-  // clicking Edit expands the full Wind/Difficulty/Training controls.
-  const [setupExpanded, setSetupExpanded] = useState(false);
+  // Menu setup is shown as a summary line on the home screen; clicking
+  // Edit opens a modal with the full Wind/Difficulty/Training controls.
+  const [showSetup, setShowSetup] = useState(false);
   const [winSize, setWinSize] = useState({ w: typeof window !== "undefined" ? window.innerWidth : 1200, h: typeof window !== "undefined" ? window.innerHeight : 800 });
   const logRef = useRef(null);
   const autoPlayRef = useRef(null);
@@ -1305,6 +1305,72 @@ function MahjongGame() {
   }
 
   // ============================================================
+  // SETUP OVERLAY (Game Setup popup)
+  // ============================================================
+  function renderSetupOverlay() {
+    return (
+      <div style={S.overlay} onClick={() => setShowSetup(false)}>
+        <div style={S.setupPanel} onClick={(e) => e.stopPropagation()}>
+          <div style={S.setupModalHeader}>
+            <h2 style={S.setupModalTitle}>{L.setupTitle}</h2>
+            <button tabIndex={-1} style={S.menuBtn} onClick={() => setShowSetup(false)}>{L.helpClose}</button>
+          </div>
+          <div style={S.setupModalContent}>
+            <div style={S.menuSetting}>
+              <label style={S.menuLabel}>{L.windRoundsLabel}</label>
+              <div style={S.windButtons}>
+                {[1, 2, 4].map((n) => (
+                  <button
+                    tabIndex={-1}
+                    key={n}
+                    style={{ ...S.windBtn, ...(windRoundsSetting === n ? S.windBtnActive : {}) }}
+                    onClick={() => setWindRoundsSetting(n)}
+                  >
+                    {L.windRoundsBtn(n)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={S.menuSetting}>
+              <label style={S.menuLabel}>{L.difficultyLabel}</label>
+              <div style={S.windButtons}>
+                {["easy", "medium", "expert"].map((d) => (
+                  <button
+                    tabIndex={-1}
+                    key={d}
+                    style={{ ...S.windBtn, ...(difficulty === d ? S.windBtnActive : {}) }}
+                    onClick={() => setDifficulty(d)}
+                  >
+                    {d === "easy" ? L.diffEasy : d === "medium" ? L.diffMedium : L.diffExpert}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={S.menuToggleRow}>
+              <button
+                tabIndex={-1}
+                style={{ ...S.menuToggleBtn, ...(trainingMode ? S.menuToggleBtnActive : {}) }}
+                onClick={() => setTrainingMode((v) => !v)}
+                aria-pressed={trainingMode}
+              >
+                <span style={{ ...S.menuToggleBox, ...(trainingMode ? S.menuToggleBoxActive : {}) }}>
+                  {trainingMode ? "✓" : ""}
+                </span>
+                <span>{L.trainingModeLabel}</span>
+              </button>
+            </div>
+          </div>
+          <div style={S.setupModalFooter}>
+            <button tabIndex={-1} style={S.setupDoneBtn} onClick={() => setShowSetup(false)}>
+              {L.setupDoneBtn}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================================
   // HELP OVERLAY
   // ============================================================
   function renderHelpOverlay() {
@@ -1411,68 +1477,15 @@ function MahjongGame() {
           <div style={S.menuMain}>
             <h1 style={S.menuTitle}>{L.title}</h1>
             <p style={S.menuSubtitle}>{L.subtitle}</p>
-            {!setupExpanded ? (
-              <div style={S.setupSummaryRow}>
-                <span style={S.setupSummaryText}>
-                  <span style={S.setupSummaryLabel}>{L.setupLabel}:</span>
-                  {L.setupRoundsFmt(windRoundsSetting * 4)} · {difficulty === "easy" ? L.diffEasy : difficulty === "medium" ? L.diffMedium : L.diffExpert} · {trainingMode ? L.setupTrainOn : L.setupTrainOff}
-                </span>
-                <button tabIndex={-1} style={S.setupEditBtn} onClick={() => setSetupExpanded(true)}>
-                  {L.setupEditBtn}
-                </button>
-              </div>
-            ) : (
-              <>
-                <div style={S.menuSetting}>
-                  <label style={S.menuLabel}>{L.windRoundsLabel}</label>
-                  <div style={S.windButtons}>
-                    {[1, 2, 4].map((n) => (
-                      <button
-                        tabIndex={-1}
-                        key={n}
-                        style={{ ...S.windBtn, ...(windRoundsSetting === n ? S.windBtnActive : {}) }}
-                        onClick={() => setWindRoundsSetting(n)}
-                      >
-                        {L.windRoundsBtn(n)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div style={S.menuSetting}>
-                  <label style={S.menuLabel}>{L.difficultyLabel}</label>
-                  <div style={S.windButtons}>
-                    {["easy", "medium", "expert"].map((d) => (
-                      <button
-                        tabIndex={-1}
-                        key={d}
-                        style={{ ...S.windBtn, ...(difficulty === d ? S.windBtnActive : {}) }}
-                        onClick={() => setDifficulty(d)}
-                      >
-                        {d === "easy" ? L.diffEasy : d === "medium" ? L.diffMedium : L.diffExpert}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div style={S.menuToggleRow}>
-                  <button
-                    tabIndex={-1}
-                    style={{ ...S.menuToggleBtn, ...(trainingMode ? S.menuToggleBtnActive : {}) }}
-                    onClick={() => setTrainingMode((v) => !v)}
-                    aria-pressed={trainingMode}
-                  >
-                    <span style={{ ...S.menuToggleBox, ...(trainingMode ? S.menuToggleBoxActive : {}) }}>
-                      {trainingMode ? "✓" : ""}
-                    </span>
-                    <span>{L.trainingModeLabel}</span>
-                  </button>
-                </div>
-                <div style={S.setupDoneRow}>
-                  <button tabIndex={-1} style={S.setupDoneBtn} onClick={() => setSetupExpanded(false)}>
-                    {L.setupDoneBtn}
-                  </button>
-                </div>
-              </>
-            )}
+            <div style={S.setupSummaryRow}>
+              <span style={S.setupSummaryText}>
+                <span style={S.setupSummaryLabel}>{L.setupLabel}:</span>
+                {L.setupRoundsFmt(windRoundsSetting * 4)} · {difficulty === "easy" ? L.diffEasy : difficulty === "medium" ? L.diffMedium : L.diffExpert} · {trainingMode ? L.setupTrainOn : L.setupTrainOff}
+              </span>
+              <button tabIndex={-1} style={S.setupEditBtn} onClick={() => setShowSetup(true)}>
+                {L.setupEditBtn}
+              </button>
+            </div>
             {(gameStarted || hasResumeSave) && (
               <>
                 <div style={S.menuBtnRow}>
@@ -1492,16 +1505,17 @@ function MahjongGame() {
               <button tabIndex={-1} style={S.langBtn} onClick={() => setLang(lang === "en" ? "zh" : "en")}>{L.langToggle}</button>
             </div>
             <div style={S.menuHelpRow}>
-              <button tabIndex={-1} style={S.menuIconBtn} onClick={() => setShowHelp(true)} title={L.howToPlay} aria-label={L.howToPlay}>?</button>
-              <button tabIndex={-1} style={S.menuIconBtn} onClick={openStats} title={L.statsBtn} aria-label={L.statsBtn}>📊</button>
-              <button tabIndex={-1} style={S.menuIconBtn} onClick={() => setShowNames(true)} title={L.manageNamesBtn} aria-label={L.manageNamesBtn}>👥</button>
-              <button tabIndex={-1} style={S.menuIconBtn} onClick={startWithAdmin} title={L.adminMenuBtn} aria-label={L.adminMenuBtn}>🔧</button>
+              <button tabIndex={-1} style={S.langBtn} onClick={() => setShowHelp(true)}>{L.howToPlay}</button>
+              <button tabIndex={-1} style={S.langBtn} onClick={openStats}>{L.statsBtn}</button>
+              <button tabIndex={-1} style={S.langBtn} onClick={() => setShowNames(true)}>{L.manageNamesBtn}</button>
+              <button tabIndex={-1} style={S.langBtn} onClick={startWithAdmin}>{L.adminMenuBtn}</button>
             </div>
           </div>
         </div>
       </div>
       {showHelp && renderHelpOverlay()}
       {showStats && renderStatsOverlay()}
+      {showSetup && renderSetupOverlay()}
       {showAdmin && renderAdminOverlay()}
       {showNames && renderNamesOverlay()}
       </>
@@ -2087,6 +2101,7 @@ function MahjongGame() {
     </div>
     {showHelp && renderHelpOverlay()}
     {showStats && renderStatsOverlay()}
+    {showSetup && renderSetupOverlay()}
     {showAdmin && renderAdminOverlay()}
     {showNames && renderNamesOverlay()}
     </>
