@@ -38,6 +38,9 @@ function MahjongGame() {
     catch { return false; }
   });
   const [hintIdx, setHintIdx] = useState(null);
+  // Menu setup section is collapsed to a single summary line by default;
+  // clicking Edit expands the full Wind/Difficulty/Training controls.
+  const [setupExpanded, setSetupExpanded] = useState(false);
   const [winSize, setWinSize] = useState({ w: typeof window !== "undefined" ? window.innerWidth : 1200, h: typeof window !== "undefined" ? window.innerHeight : 800 });
   const logRef = useRef(null);
   const autoPlayRef = useRef(null);
@@ -1408,49 +1411,68 @@ function MahjongGame() {
           <div style={S.menuMain}>
             <h1 style={S.menuTitle}>{L.title}</h1>
             <p style={S.menuSubtitle}>{L.subtitle}</p>
-            <div style={S.menuSetting}>
-              <label style={S.menuLabel}>{L.windRoundsLabel}</label>
-              <div style={S.windButtons}>
-                {[1, 2, 4].map((n) => (
-                  <button
-                    tabIndex={-1}
-                    key={n}
-                    style={{ ...S.windBtn, ...(windRoundsSetting === n ? S.windBtnActive : {}) }}
-                    onClick={() => setWindRoundsSetting(n)}
-                  >
-                    {L.windRoundsBtn(n)}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div style={S.menuSetting}>
-              <label style={S.menuLabel}>{L.difficultyLabel}</label>
-              <div style={S.windButtons}>
-                {["easy", "medium", "expert"].map((d) => (
-                  <button
-                    tabIndex={-1}
-                    key={d}
-                    style={{ ...S.windBtn, ...(difficulty === d ? S.windBtnActive : {}) }}
-                    onClick={() => setDifficulty(d)}
-                  >
-                    {d === "easy" ? L.diffEasy : d === "medium" ? L.diffMedium : L.diffExpert}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div style={S.menuToggleRow}>
-              <button
-                tabIndex={-1}
-                style={{ ...S.menuToggleBtn, ...(trainingMode ? S.menuToggleBtnActive : {}) }}
-                onClick={() => setTrainingMode((v) => !v)}
-                aria-pressed={trainingMode}
-              >
-                <span style={{ ...S.menuToggleBox, ...(trainingMode ? S.menuToggleBoxActive : {}) }}>
-                  {trainingMode ? "✓" : ""}
+            {!setupExpanded ? (
+              <div style={S.setupSummaryRow}>
+                <span style={S.setupSummaryText}>
+                  <span style={S.setupSummaryLabel}>{L.setupLabel}:</span>
+                  {L.setupRoundsFmt(windRoundsSetting * 4)} · {difficulty === "easy" ? L.diffEasy : difficulty === "medium" ? L.diffMedium : L.diffExpert} · {trainingMode ? L.setupTrainOn : L.setupTrainOff}
                 </span>
-                <span>{L.trainingModeLabel}</span>
-              </button>
-            </div>
+                <button tabIndex={-1} style={S.setupEditBtn} onClick={() => setSetupExpanded(true)}>
+                  {L.setupEditBtn}
+                </button>
+              </div>
+            ) : (
+              <>
+                <div style={S.menuSetting}>
+                  <label style={S.menuLabel}>{L.windRoundsLabel}</label>
+                  <div style={S.windButtons}>
+                    {[1, 2, 4].map((n) => (
+                      <button
+                        tabIndex={-1}
+                        key={n}
+                        style={{ ...S.windBtn, ...(windRoundsSetting === n ? S.windBtnActive : {}) }}
+                        onClick={() => setWindRoundsSetting(n)}
+                      >
+                        {L.windRoundsBtn(n)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div style={S.menuSetting}>
+                  <label style={S.menuLabel}>{L.difficultyLabel}</label>
+                  <div style={S.windButtons}>
+                    {["easy", "medium", "expert"].map((d) => (
+                      <button
+                        tabIndex={-1}
+                        key={d}
+                        style={{ ...S.windBtn, ...(difficulty === d ? S.windBtnActive : {}) }}
+                        onClick={() => setDifficulty(d)}
+                      >
+                        {d === "easy" ? L.diffEasy : d === "medium" ? L.diffMedium : L.diffExpert}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div style={S.menuToggleRow}>
+                  <button
+                    tabIndex={-1}
+                    style={{ ...S.menuToggleBtn, ...(trainingMode ? S.menuToggleBtnActive : {}) }}
+                    onClick={() => setTrainingMode((v) => !v)}
+                    aria-pressed={trainingMode}
+                  >
+                    <span style={{ ...S.menuToggleBox, ...(trainingMode ? S.menuToggleBoxActive : {}) }}>
+                      {trainingMode ? "✓" : ""}
+                    </span>
+                    <span>{L.trainingModeLabel}</span>
+                  </button>
+                </div>
+                <div style={S.setupDoneRow}>
+                  <button tabIndex={-1} style={S.setupDoneBtn} onClick={() => setSetupExpanded(false)}>
+                    {L.setupDoneBtn}
+                  </button>
+                </div>
+              </>
+            )}
             {(gameStarted || hasResumeSave) && (
               <>
                 <div style={S.menuBtnRow}>
@@ -1474,15 +1496,6 @@ function MahjongGame() {
               <button tabIndex={-1} style={S.menuIconBtn} onClick={openStats} title={L.statsBtn} aria-label={L.statsBtn}>📊</button>
               <button tabIndex={-1} style={S.menuIconBtn} onClick={() => setShowNames(true)} title={L.manageNamesBtn} aria-label={L.manageNamesBtn}>👥</button>
               <button tabIndex={-1} style={S.menuIconBtn} onClick={startWithAdmin} title={L.adminMenuBtn} aria-label={L.adminMenuBtn}>🔧</button>
-            </div>
-          </div>
-          <div style={S.menuAside}>
-            <div style={S.rulesBox}>
-              <h3 style={S.rulesTitle}>{L.rulesTitle}</h3>
-              <p style={S.ruleText}>{L.rule1}</p>
-              <p style={S.ruleText}>{L.rule2}</p>
-              <p style={S.ruleText}>{L.rule3}</p>
-              <p style={S.ruleText}>{L.rule4}</p>
             </div>
           </div>
         </div>
