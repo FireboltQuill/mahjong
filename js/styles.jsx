@@ -55,12 +55,10 @@ function makeStyles(vw, vh) {
   },
   menuCard: {
     background: "rgba(26,58,42,0.92)", border: `2px solid ${gold}`, borderRadius: s(14),
-    padding: menuTwoCol ? `${s(24)}px ${s(28)}px` : `${s(28)}px ${s(32)}px`,
-    maxWidth: menuTwoCol ? s(800) : s(420), width: "100%",
+    padding: `${s(28)}px ${s(32)}px`,
+    maxWidth: s(460), width: "100%",
     boxShadow: "0 24px 80px rgba(0,0,0,0.6), inset 0 1px 0 rgba(201,169,97,0.15)",
-    display: "flex",
-    flexDirection: menuTwoCol ? "row" : "column",
-    gap: menuTwoCol ? s(28) : 0,
+    display: "flex", flexDirection: "column",
     alignItems: "stretch",
   },
   menuMain: {
@@ -98,6 +96,42 @@ function makeStyles(vw, vh) {
   },
   menuBtnRow: { display: "flex", gap: s(10), justifyContent: "center", alignItems: "center", flexWrap: "wrap", marginTop: s(6) },
   menuHelpRow: { display: "flex", gap: s(8), justifyContent: "center", marginTop: s(10), flexWrap: "wrap" },
+  // Summary line that replaces the three expanded setting rows when
+  // setupExpanded is false. Click "Edit" to expand back to the full
+  // controls. (Menu redesign per user feedback.)
+  setupSummaryRow: {
+    display: "flex", alignItems: "center", justifyContent: "space-between",
+    gap: s(8), padding: `${s(8)}px ${s(12)}px`,
+    background: "rgba(0,0,0,0.25)", borderRadius: s(8),
+    border: "1px solid rgba(201,169,97,0.18)",
+    marginBottom: s(14),
+  },
+  setupSummaryText: {
+    color: green, fontSize: ts(12), letterSpacing: 0.3,
+    textAlign: "left", flex: 1, lineHeight: 1.4,
+  },
+  setupSummaryLabel: { color: gold, fontWeight: "bold", marginRight: s(6) },
+  setupEditBtn: {
+    background: "rgba(201,169,97,0.1)",
+    border: `1px solid ${goldDim}`,
+    color: gold,
+    padding: `${s(4)}px ${s(10)}px`,
+    borderRadius: s(6),
+    cursor: "pointer", outline: "none",
+    fontSize: ts(11), letterSpacing: 0.5,
+    whiteSpace: "nowrap", flexShrink: 0,
+  },
+  setupDoneRow: {
+    display: "flex", justifyContent: "center", marginTop: s(4), marginBottom: s(10),
+  },
+  setupDoneBtn: {
+    background: `linear-gradient(135deg, ${gold}, #a8873d)`,
+    color: bg, border: "none",
+    padding: `${s(6)}px ${s(28)}px`,
+    borderRadius: s(6),
+    cursor: "pointer", outline: "none",
+    fontSize: ts(12), fontWeight: "bold", letterSpacing: 1,
+  },
   // Compact icon-only buttons for secondary menu actions (Help, Stats,
   // Names, Admin). The full label appears as a title tooltip on hover.
   menuIconBtn: {
