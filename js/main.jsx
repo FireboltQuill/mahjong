@@ -858,10 +858,17 @@ function MahjongGame() {
   }
   function resetStats() {
     // §7.6 decision — resetting stats does NOT remove unlocked
-    // achievements. Achievements have a separate reset path if needed.
+    // achievements. Achievements have a separate reset path (below).
     if (!window.confirm(L.statsResetConfirm)) return;
     resetLifetime();
     setStats({ ...DEFAULT_LIFETIME_STATS });
+  }
+  // §7.6 — the separate achievements reset action. Mirrors resetStats
+  // but only clears mahjong_achievements; lifetime stats are kept.
+  function resetAchievementsAction() {
+    if (!window.confirm(L.statsResetAchievementsConfirm)) return;
+    resetAchievements();
+    setAchievements({ ...DEFAULT_ACHIEVEMENTS, unlocked: {} });
   }
 
   // Name group editor: mutations also persist to localStorage.
@@ -1295,7 +1302,11 @@ function MahjongGame() {
             </div>
           </div>
           <div style={S.statsFooter}>
-            <button tabIndex={-1} style={S.statsResetBtn} onClick={resetStats}>{L.statsResetBtn}</button>
+            {statsTab === "achievements" ? (
+              <button tabIndex={-1} style={S.statsResetBtn} onClick={resetAchievementsAction}>{L.statsResetAchievementsBtn}</button>
+            ) : (
+              <button tabIndex={-1} style={S.statsResetBtn} onClick={resetStats}>{L.statsResetBtn}</button>
+            )}
           </div>
         </div>
       </div>
