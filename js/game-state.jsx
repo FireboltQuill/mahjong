@@ -16,14 +16,25 @@ function makeGameId() {
   return `${t}-${r}`;
 }
 
-function createInitialState(windRounds = 1, lang = "en") {
-  const personalities = assignPersonalities();
+// createInitialState now takes a seed and optional daily metadata (spec
+// §9.6). Match-scope matchSeed is derived from the supplied seed or a
+// fresh randomUint32; round-1 seed is derived deterministically from it.
+function createInitialState(windRounds = 1, lang = "en", seed, opts = {}) {
+  const { dailyDate = null } = opts;
+  const isDaily = !!dailyDate;
+  const matchSeed = ((seed !== undefined ? seed : randomUint32()) >>> 0);
+  // cosmeticRng drives personality + name selection so daily games are
+  // identical across users even if local custom name groups vary.
+  // deckRng (in initRound) is separately derived from the round seed.
+  const cosmeticRng = seededRng((matchSeed ^ 0x9E3779B9) >>> 0);
+  const personalities = assignPersonalities(cosmeticRng);
+  // Daily mode uses the fixed DAILY_NAME_GROUPS (spec §9.7); normal
+  // games use the user's loaded groups.
+  const nameGroups = isDaily ? DAILY_NAME_GROUPS : loadNameGroups();
+  const { groupName, names } = pickPlayerNames(nameGroups, 4, cosmeticRng);
   const totalRounds = windRounds * 4;
   const startingScore = totalRounds * STARTING_PER_ROUND;
-  // Pick a random name group, then four distinct names from it (one for the
-  // human at seat 0, three for the AIs at seats 1–3). Names stay fixed for
-  // the whole match so a player keeps their name as the dealer rotates.
-  const { groupName, names } = pickPlayerNames(loadNameGroups(), 4);
+  const round1Seed = seedForRound(matchSeed, 1);
   return initRound({
     dealer: 0,
     roundWind: "east",
@@ -45,12 +56,21 @@ function createInitialState(windRounds = 1, lang = "en") {
     gameId: makeGameId(),
     persistRev: 0,
     adminTouched: false,
-  }, lang);
+    // Phase 5 seed/daily metadata (spec §9.5, §9.8).
+    matchSeed,
+    roundSeeds: { 1: round1Seed },
+    dailyGame: isDaily,
+    dailyDate,
+    // Per Appendix A.6 / spec §9.4 — track admin-minted tile ids at
+    // match scope so they're never reused within a match.
+    usedAdminIds: [],
+  }, lang, round1Seed);
 }
 
-function initRound(gameInfo, lang = "en") {
+function initRound(gameInfo, lang = "en", roundSeed) {
   const ll = LANG[lang];
-  const deck = shuffle(createDeck());
+  const deckRng = seededRng(roundSeed >>> 0);
+  const deck = shuffle(createDeck(), deckRng);
   const players = [];
   for (let i = 0; i < 4; i++) {
     players.push({

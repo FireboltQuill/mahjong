@@ -1,0 +1,36 @@
+name: Deploy to itch.io
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Stage game files
+        run: |
+          mkdir -p _itch
+          cp index.html _itch/
+          cp -r js _itch/
+
+      - name: Download butler
+        run: |
+          curl -L -o butler.zip https://broth.itch.zone/butler/linux-amd64/LATEST/archive/default
+          unzip -q butler.zip
+          chmod +x butler
+          ./butler -V
+
+      - name: Push to itch.io (HTML5 channel)
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+        run: |
+          VERSION="$(date -u +%Y%m%d)-${GITHUB_SHA::7}"
+          ./butler push _itch fireboltquill/mahjong:html5 --userversion "$VERSION"

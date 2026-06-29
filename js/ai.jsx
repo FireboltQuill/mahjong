@@ -471,9 +471,14 @@ function aiDecideClaim(player, discardedTile, claimType, seatIndex, discarderInd
   return false;
 }
 
-function assignPersonalities() {
-  // Randomly assign from pool for seats 1-3 (AI players)
-  const shuffled = [...PERSONALITY_POOL].sort(() => Math.random() - 0.5);
-  return [null, shuffled[0], shuffled[1], shuffled[2]]; // idx 0 = human
+// Randomly assign personalities to AI seats 1..3. Phase 5 fix:
+//   1. Threads rng so daily games are deterministic across users.
+//   2. Replaces the biased [].sort(() => rng() - 0.5) with proper
+//      Fisher-Yates via shuffle() — non-uniform comparator behaviour was
+//      independently a bug (v8 in particular skewed distributions).
+//   See spec §9.3.1 audit + §9.3.2.
+function assignPersonalities(rng) {
+  const arr = shuffle(PERSONALITY_POOL, rng);
+  return [null, arr[0], arr[1], arr[2]]; // idx 0 = human
 }
 

@@ -43,8 +43,12 @@ function tileDisplay(t) {
 }
 
 
-function createTile(suit, rank, honor) {
-  return { suit, rank, honor, id: Math.random().toString(36).substr(2, 9) };
+// Deterministic tile IDs per spec §9.4. id is a string so existing
+// equality/filter call-sites (t.id === other.id) still work; createDeck
+// assigns "0".."135" in order, admin-supplied tiles use IDs starting at
+// max(scannedMax + 1, 1000) per applyAdmin's id factory.
+function createTile(suit, rank, honor, id) {
+  return { suit, rank, honor, id: String(id) };
 }
 
 function tileKey(t) {
@@ -88,24 +92,27 @@ function isSuit(t) {
 
 function createDeck() {
   const tiles = [];
+  let id = 0;
   for (const suit of SUITS) {
     for (const rank of RANKS) {
-      for (let i = 0; i < 4; i++) tiles.push(createTile(suit, rank, null));
+      for (let i = 0; i < 4; i++) tiles.push(createTile(suit, rank, null, id++));
     }
   }
   for (const w of WINDS) {
-    for (let i = 0; i < 4; i++) tiles.push(createTile("wind", null, w));
+    for (let i = 0; i < 4; i++) tiles.push(createTile("wind", null, w, id++));
   }
   for (const d of DRAGONS) {
-    for (let i = 0; i < 4; i++) tiles.push(createTile("dragon", null, d));
+    for (let i = 0; i < 4; i++) tiles.push(createTile("dragon", null, d, id++));
   }
   return tiles;
 }
 
-function shuffle(arr) {
+// Fisher-Yates with caller-supplied rng (spec §9.3). Gameplay-affecting
+// shuffles MUST pass a deterministic rng — see §9.3.1 for the audit.
+function shuffle(arr, rng) {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = rng.nextInt(i + 1);
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;

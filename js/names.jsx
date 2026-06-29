@@ -16,6 +16,13 @@ const DEFAULT_NAME_GROUPS = [
   { name: "Freezing",  names: ["Chiffon", "Cassandra", "Satellizer", "Kazuha"] },
 ];
 
+// Daily challenge name pool — fixed regardless of the user's
+// customized DEFAULT_NAME_GROUPS / loaded groups (spec §9.6, §9.7).
+// Identical across users so daily AI seat names match.
+const DAILY_NAME_GROUPS = [
+  { name: "Daily", names: ["Aster", "Briar", "Cypress", "Daphne"] },
+];
+
 function sanitizeGroups(arr) {
   if (!Array.isArray(arr)) return null;
   const out = [];
@@ -56,10 +63,11 @@ function saveNameGroups(groups) {
 }
 
 // Fisher-Yates partial shuffle: distinct random selection of `count` items.
-function pickN(pool, count) {
+// rng must be passed by caller (spec §9.3.1 audit — removed Math.random).
+function pickN(pool, count, rng) {
   const usable = [...pool];
   for (let i = 0; i < count && i < usable.length; i++) {
-    const j = i + Math.floor(Math.random() * (usable.length - i));
+    const j = i + rng.nextInt(usable.length - i);
     [usable[i], usable[j]] = [usable[j], usable[i]];
   }
   return usable.slice(0, count);
@@ -68,15 +76,15 @@ function pickN(pool, count) {
 // Pick a random group (one with at least one name), then `count` distinct
 // names from it. Falls back to "You" for the human and "AI N" for AI seats
 // when the chosen group runs out, so the game stays playable.
-function pickPlayerNames(groups, count = 4) {
+function pickPlayerNames(groups, count, rng) {
   const usable = (groups || []).filter((g) => g && Array.isArray(g.names) && g.names.length > 0);
   let chosenGroup = null;
   let pool = [];
   if (usable.length > 0) {
-    chosenGroup = usable[Math.floor(Math.random() * usable.length)];
+    chosenGroup = usable[rng.nextInt(usable.length)];
     pool = chosenGroup.names;
   }
-  const picked = pickN(pool, count);
+  const picked = pickN(pool, count, rng);
   const names = [];
   for (let i = 0; i < count; i++) {
     if (i < picked.length) names.push(picked[i]);
