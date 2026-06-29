@@ -1555,20 +1555,46 @@ function MahjongGame() {
             <button tabIndex={-1} style={S.menuBtn} onClick={() => setShowDaily(false)}>{L.dailyClose}</button>
           </div>
           <div style={S.setupModalContent}>
-            <p style={S.resumeNote}>{L.dailyToday} {today}</p>
-            <p style={S.resumeNote}>{L.dailyResetIn(hLeft, mLeft)}</p>
-            <p style={{ ...S.resumeNote, marginTop: 12 }}>
+            <div style={S.dailyHeaderRow}>
+              <div style={S.dailyDateBlock}>
+                <span style={S.dailyDateLabel}>{L.dailyToday}</span>
+                <span style={S.dailyDateValue}>{today}</span>
+              </div>
+              <span style={S.dailyCountdown}>{L.dailyResetIn(hLeft, mLeft)}</span>
+            </div>
+
+            <div style={{
+              ...S.dailyStatusPill,
+              ...(entry ? S.dailyStatusPlayed : S.dailyStatusAvailable),
+            }}>
               {entry ? L.dailyAlreadyPlayed : L.dailyNotPlayed}
-            </p>
+            </div>
+
             {entry && (
-              <>
-                <p style={S.resumeNote}>{entry.won ? L.dailyResultWon : L.dailyResultLost}</p>
-                <p style={S.resumeNote}>{L.dailyFinalScore(entry.finalScore)}</p>
-                <p style={S.resumeNote}>{L.dailyRank(entry.rank)}</p>
-              </>
+              <div style={S.dailyResultPanel}>
+                <div style={S.dailyResultRow}>
+                  <span style={S.dailyResultLabel}>{L.dailyResultLabel}</span>
+                  <span style={entry.won ? S.dailyResultBadgeWon : S.dailyResultBadgeLost}>
+                    {entry.won ? L.dailyWon : L.dailyLost}
+                  </span>
+                </div>
+                <div style={S.dailyResultRow}>
+                  <span style={S.dailyResultLabel}>{L.lblBestBalance}</span>
+                  <span style={S.dailyResultValue}>{entry.finalScore}</span>
+                </div>
+                <div style={S.dailyResultRow}>
+                  <span style={S.dailyResultLabel}>Rank</span>
+                  <span style={S.dailyResultValue}>{entry.rank}</span>
+                </div>
+              </div>
             )}
-            <p style={{ ...S.resumeNote, marginTop: 8 }}>{L.dailyStreak(streak)}</p>
-            <p style={{ ...S.resumeNote, marginTop: 12, fontStyle: "italic" }}>{L.dailyNote}</p>
+
+            <div style={S.dailyStreakBox}>
+              <span style={S.dailyStreakLabel}>{L.dailyStreakLabel}</span>
+              <span style={S.dailyStreakValue}>{L.dailyDaysFmt(streak)}</span>
+            </div>
+
+            <p style={S.dailyNote}>{L.dailyNote}</p>
           </div>
           <div style={S.setupModalFooter}>
             <button tabIndex={-1} style={S.setupDoneBtn} onClick={() => startDailyGame(!!entry)}>
