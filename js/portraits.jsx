@@ -202,9 +202,8 @@ function HairBack({ style, color }) {
     case "high-ponytail":
       return (
         <g>
-          <ellipse cx="50" cy="42" rx="22" ry="15" fill={color}/>
-          <ellipse cx="50" cy="20" rx="7" ry="9" fill={color}/>
-          <rect x="46" y="27" width="8" height="3" fill={color} opacity="0.55"/>
+          <ellipse cx="50" cy="42" rx="22" ry="17" fill={color}/>
+          <ellipse cx="50" cy="22" rx="11" ry="12" fill={color}/>
         </g>
       );
     case "asymmetric-bob":
