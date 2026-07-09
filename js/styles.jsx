@@ -374,14 +374,25 @@ function makeStyles(vw, vh) {
   },
   // Portrait chip in the opponent strip header (spec §11.2, §11.5).
   // Container is a circle with overflow: hidden; the inline SVG inside
-  // fills to a 32px square and gets clipped to a circle by the container.
+  // fills the container and gets clipped to a circle by overflow.
   portraitChip: {
-    width: s(32), height: s(32),
+    width: s(44), height: s(44),
     borderRadius: "50%",
     overflow: "hidden",
     display: "inline-flex", alignItems: "center", justifyContent: "center",
-    marginRight: s(8), flexShrink: 0,
-    boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.35), 0 1px 3px rgba(0,0,0,0.4)",
+    marginRight: s(10), flexShrink: 0,
+    boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.35), 0 1px 4px rgba(0,0,0,0.45)",
+    userSelect: "none",
+    background: "rgba(0,0,0,0.3)",
+  },
+  // Slightly larger version used for the player's own score row.
+  playerPortraitChip: {
+    width: s(48), height: s(48),
+    borderRadius: "50%",
+    overflow: "hidden",
+    display: "inline-flex", alignItems: "center", justifyContent: "center",
+    marginRight: s(10), flexShrink: 0,
+    boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.35), 0 2px 6px rgba(0,0,0,0.5)",
     userSelect: "none",
     background: "rgba(0,0,0,0.3)",
   },
@@ -491,7 +502,7 @@ function makeStyles(vw, vh) {
     background: "linear-gradient(to top, rgba(0,0,0,0.3), rgba(0,0,0,0.1))",
     padding: `${s(6)}px ${s(16)}px ${s(10)}px`, overflow: "hidden", position: "relative",
   },
-  playerScoreRow: { display: "flex", justifyContent: "flex-end", marginBottom: s(4) },
+  playerScoreRow: { display: "flex", justifyContent: "flex-end", alignItems: "center", gap: s(8), marginBottom: s(4) },
 
   // Action bar
   actionBar: {
