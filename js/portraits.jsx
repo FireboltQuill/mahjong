@@ -1,8 +1,9 @@
-// AI portraits — a small library of hand-drawn SVG portraits rendered
-// per AI seat. Each portrait is a stylized silhouette assembled from
-// SVG primitives (no external assets, no font emoji, no imported art)
-// and mapped to a name via a deterministic hash so the same AI name
-// always gets the same portrait. See spec §11.2.
+// AI portraits — a library of hand-drawn SVG portraits rendered per AI
+// seat. Each portrait is a stylized silhouette assembled from SVG
+// primitives (no external assets, no font emoji, no imported art) and
+// mapped to a name via an explicit lookup table. Names not in the
+// table fall back to a deterministic hash so daily-only or custom
+// names still get a stable portrait. See spec §11.2.
 
 // Seat-scoped fallback palette. Only used when a portrait fails to
 // render (should never happen at runtime).
@@ -13,37 +14,84 @@ const PORTRAIT_COLORS = [
   { bg: "#3a4a6b", fg: "#e0e8f0" },
 ];
 
-// 12 hand-designed presets. Each combines a background gradient, a hair
-// silhouette, a skin tone, an eye color, and an optional accessory.
-// Presets read as silhouettes at 28px thanks to strong bg/hair contrast.
+// 28 hand-designed presets. Each combines a background gradient, a
+// hair silhouette, a skin tone, an eye color, and an optional
+// accessory. Designed to be visually distinct at 32px via strong bg
+// contrast and clear silhouette differences.
 const PORTRAIT_PRESETS = [
-  { id: 0,  bg: "#7a2530", bgAlt: "#4a1520", hair: "#141014", hairStyle: "short-spiky", skin: "#d9b088", eye: "#2a2020", accessory: "headband-red" },
-  { id: 1,  bg: "#3d2a5c", bgAlt: "#2a1a44", hair: "#8b6ab8", hairStyle: "long-straight", skin: "#e8c8b0", eye: "#4a2a5a", accessory: null },
-  { id: 2,  bg: "#a67a2d", bgAlt: "#6e4d1a", hair: "#e8c860", hairStyle: "twin-tails", skin: "#f0d8b8", eye: "#4a3a2a", accessory: "ribbon-pink" },
-  { id: 3,  bg: "#2f4670", bgAlt: "#1c2c48", hair: "#c8c8dc", hairStyle: "short-swept", skin: "#e8d8c8", eye: "#5a7a9a", accessory: "earring-silver" },
-  { id: 4,  bg: "#1f4444", bgAlt: "#0d2222", hair: "#0d0d1c", hairStyle: "ponytail", skin: "#c9a37c", eye: "#4a7a5a", accessory: "face-mask" },
-  { id: 5,  bg: "#6c1f34", bgAlt: "#3f0f22", hair: "#180818", hairStyle: "bob", skin: "#e8c8b0", eye: "#7a4a8a", accessory: "circlet-gold" },
-  { id: 6,  bg: "#25605e", bgAlt: "#0f3e3c", hair: "#3f8060", hairStyle: "wild-messy", skin: "#c8a878", eye: "#4a3a2a", accessory: "eyepatch" },
-  { id: 7,  bg: "#7a3860", bgAlt: "#4e1f40", hair: "#e484aa", hairStyle: "bob", skin: "#f0d8c8", eye: "#6a4a8a", accessory: "crescent-mark" },
-  { id: 8,  bg: "#8a562a", bgAlt: "#553318", hair: "#b3502c", hairStyle: "braid", skin: "#f0c8a8", eye: "#6a4a2a", accessory: null },
-  { id: 9,  bg: "#a56048", bgAlt: "#6e3a26", hair: "#161010", hairStyle: "buzz", skin: "#c8996f", eye: "#3a1a10", accessory: "headband-white" },
-  { id: 10, bg: "#243450", bgAlt: "#101c30", hair: "#4ab8c8", hairStyle: "asymmetric-bob", skin: "#e0d0c0", eye: "#5ad0e0", accessory: "cyber-line" },
-  { id: 11, bg: "#2f5432", bgAlt: "#153015", hair: "#6a4426", hairStyle: "top-knot", skin: "#c8a480", eye: "#4a6a3a", accessory: "leaf" },
+  // 0..3  — deterministic assignments for Street-Fighter-group names
+  { id: 0,  bg: "#3a4a6a", bgAlt: "#20304a", hair: "#d8b878", hairStyle: "long-wavy",         skin: "#e8d0b0", eye: "#3a5a8a", accessory: "earring-silver" },
+  { id: 1,  bg: "#4a1a3a", bgAlt: "#280a20", hair: "#6a2a5a", hairStyle: "asymmetric-bob",    skin: "#d9b088", eye: "#b83a4a", accessory: "cyber-line" },
+  { id: 2,  bg: "#2a4a5a", bgAlt: "#152a35", hair: "#d8b878", hairStyle: "high-ponytail",     skin: "#e0c0a0", eye: "#3a5a8a", accessory: "tribal-mark" },
+  { id: 3,  bg: "#6a2a3a", bgAlt: "#3a1520", hair: "#241820", hairStyle: "twin-tails",        skin: "#e8c8a8", eye: "#4a3020", accessory: "ribbon-pink" },
+  // 4..7  — Guilty-Gear-group names
+  { id: 4,  bg: "#7a3a5a", bgAlt: "#4a1a35", hair: "#d8b078", hairStyle: "long-with-forelock", skin: "#f0d0b8", eye: "#4a2a2a", accessory: "feather" },
+  { id: 5,  bg: "#2a3a5a", bgAlt: "#152540", hair: "#4a6a9a", hairStyle: "long-straight",     skin: "#e8d8d0", eye: "#5a7a9a", accessory: "horns" },
+  { id: 6,  bg: "#3a3a5a", bgAlt: "#25254a", hair: "#e8dcd0", hairStyle: "pixie",             skin: "#dcc8b8", eye: "#4a2a5a", accessory: "forehead-jewel" },
+  { id: 7,  bg: "#4a2020", bgAlt: "#2a1010", hair: "#a83030", hairStyle: "side-braid",        skin: "#e8c8a8", eye: "#4a3020", accessory: "scar-cheek" },
+  // 8..11 — Tekken-group names
+  { id: 8,  bg: "#6a4a1a", bgAlt: "#4a2a08", hair: "#d8a860", hairStyle: "long-straight",     skin: "#e8c8a8", eye: "#6a4a2a", accessory: "headband-white" },
+  { id: 9,  bg: "#2a4a3a", bgAlt: "#153a2a", hair: "#241820", hairStyle: "long-straight",     skin: "#e8c8a8", eye: "#3a2a20", accessory: "crescent-mark" },
+  { id: 10, bg: "#3a2a5a", bgAlt: "#1a1a4a", hair: "#241820", hairStyle: "wavy-long",         skin: "#a67a58", eye: "#4a2a5a", accessory: "forehead-jewel" },
+  { id: 11, bg: "#5a3a5a", bgAlt: "#3a1a40", hair: "#d8c090", hairStyle: "drills",            skin: "#f0d8c0", eye: "#6a3a2a", accessory: "ribbon-pink" },
+  // 12..15 — Bleach-group names
+  { id: 12, bg: "#2a4a3a", bgAlt: "#153a2a", hair: "#241820", hairStyle: "braid",             skin: "#e0c0a0", eye: "#3a2a20", accessory: null },
+  { id: 13, bg: "#4a6a8a", bgAlt: "#2a4a6a", hair: "#e8e0d8", hairStyle: "long-straight",     skin: "#f0e0d8", eye: "#6a7a9a", accessory: "crescent-mark" },
+  { id: 14, bg: "#4a2a5a", bgAlt: "#2a1a35", hair: "#4a2a4a", hairStyle: "high-ponytail",     skin: "#8a5a3a", eye: "#d8a848", accessory: null },
+  { id: 15, bg: "#7a5a3a", bgAlt: "#4a3018", hair: "#d8b078", hairStyle: "hime",              skin: "#f0d8b8", eye: "#6a4a2a", accessory: "veil-back" },
+  // 16..19 — Naruto-group names
+  { id: 16, bg: "#2a5a4a", bgAlt: "#1a3a2a", hair: "#a83030", hairStyle: "long-straight",     skin: "#e8c8a8", eye: "#3a5a4a", accessory: "headband-red" },
+  { id: 17, bg: "#2a4a2a", bgAlt: "#153020", hair: "#d8c090", hairStyle: "twin-tails",        skin: "#dcb888", eye: "#3a5a4a", accessory: "tribal-mark" },
+  { id: 18, bg: "#7a5a7a", bgAlt: "#4a2a5a", hair: "#e8e0d8", hairStyle: "long-straight",     skin: "#f0e0d0", eye: "#b83a4a", accessory: "horns" },
+  { id: 19, bg: "#4a5a7a", bgAlt: "#2a3a5a", hair: "#d8b078", hairStyle: "bob",               skin: "#e8d0b8", eye: "#4a5a7a", accessory: "earring-silver" },
+  // 20..23 — One Piece-group names
+  { id: 20, bg: "#4a2a5a", bgAlt: "#2a1a3a", hair: "#241820", hairStyle: "wavy-long",         skin: "#e8c8a8", eye: "#4a2a5a", accessory: null },
+  { id: 21, bg: "#5a3a5a", bgAlt: "#3a1a3a", hair: "#241820", hairStyle: "long-straight",     skin: "#e8c8a8", eye: "#4a3020", accessory: "circlet-gold" },
+  { id: 22, bg: "#4a5a7a", bgAlt: "#2a3a5a", hair: "#5a8ac8", hairStyle: "long-straight",     skin: "#e8c8a8", eye: "#3a5a8a", accessory: "circlet-gold" },
+  { id: 23, bg: "#4a3020", bgAlt: "#2a1810", hair: "#b8402a", hairStyle: "long-with-forelock", skin: "#e8c090", eye: "#4a3020", accessory: "glasses" },
+  // 24..27 — Freezing-group names
+  { id: 24, bg: "#3a5a3a", bgAlt: "#1a3a1a", hair: "#e8c890", hairStyle: "long-straight",     skin: "#f0d8b8", eye: "#4a5a3a", accessory: null },
+  { id: 25, bg: "#6a2a3a", bgAlt: "#3a1a25", hair: "#d8b078", hairStyle: "long-straight",     skin: "#e8c8a8", eye: "#4a3a4a", accessory: null },
+  { id: 26, bg: "#4a5a8a", bgAlt: "#2a3a5a", hair: "#e8d0a0", hairStyle: "long-straight",     skin: "#f0d8b8", eye: "#3a5a8a", accessory: "face-mask" },
+  { id: 27, bg: "#3a3a3a", bgAlt: "#1a1a1a", hair: "#181214", hairStyle: "short-swept",       skin: "#e0c0a0", eye: "#4a3020", accessory: "headband-white" },
 ];
 
-// Simple deterministic hash for name → preset id. FNV-ish mix so short
-// strings still spread across the preset range.
+// Explicit name → portrait id mapping. Same names as the default
+// DEFAULT_NAME_GROUPS in names.jsx; the mapping is stable so the same
+// AI name always gets the same portrait regardless of which group
+// they end up in.
+const PORTRAIT_NAME_MAP = {
+  // Street Fighter group
+  "Manon": 0, "Juri": 1, "Cammy": 2, "Chun Li": 3,
+  // Guilty Gear group
+  "Elphelt": 4, "Dizzy": 5, "Ramlethal": 6, "Baiken": 7,
+  // Tekken group
+  "Lidia": 8, "Jun": 9, "Zafina": 10, "Lili": 11,
+  // Bleach group
+  "Retsu": 12, "Sode no Shirayuki": 13, "Yoruichi": 14, "Senjumaru": 15,
+  // Naruto group
+  "Mei": 16, "Temari": 17, "Kaguya": 18, "Samui": 19,
+  // One Piece group
+  "Robin": 20, "Boa": 21, "Vivi": 22, "Jewelry": 23,
+  // Freezing group
+  "Chiffon": 24, "Cassandra": 25, "Satellizer": 26, "Kazuha": 27,
+};
+
+// FNV-ish name hash for names not in the explicit map (Daily group,
+// custom user-defined names, "You" fallback).
 function portraitIndexForName(name) {
-  const s = String(name || "");
+  const key = String(name || "");
+  if (Object.prototype.hasOwnProperty.call(PORTRAIT_NAME_MAP, key)) {
+    return PORTRAIT_NAME_MAP[key];
+  }
   let h = 2166136261 >>> 0;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i);
     h = Math.imul(h, 16777619) >>> 0;
   }
   return h % PORTRAIT_PRESETS.length;
 }
 
-// Preset lookup that never fails.
 function portraitPresetForName(name) {
   return PORTRAIT_PRESETS[portraitIndexForName(name)];
 }
@@ -59,12 +107,50 @@ function HairBack({ style, color }) {
           <ellipse cx="50" cy="40" rx="24" ry="16" fill={color}/>
         </g>
       );
+    case "long-wavy":
+      return (
+        <g>
+          <rect x="26" y="42" width="48" height="58" fill={color}/>
+          <ellipse cx="50" cy="40" rx="24" ry="16" fill={color}/>
+          <ellipse cx="22" cy="66" rx="4" ry="7" fill={color}/>
+          <ellipse cx="78" cy="66" rx="4" ry="7" fill={color}/>
+          <ellipse cx="24" cy="86" rx="4" ry="6" fill={color}/>
+          <ellipse cx="76" cy="86" rx="4" ry="6" fill={color}/>
+        </g>
+      );
+    case "wavy-long":
+      return (
+        <g>
+          <path d="M24 42 L24 100 L76 100 L76 42 Q76 60 72 76 Q68 92 74 100 M26 42 Q30 60 26 76 Q22 92 28 100" fill={color}/>
+          <rect x="26" y="42" width="48" height="58" fill={color}/>
+          <ellipse cx="50" cy="40" rx="24" ry="16" fill={color}/>
+        </g>
+      );
+    case "hime":
+      return (
+        <g>
+          <rect x="26" y="42" width="48" height="58" fill={color}/>
+          <ellipse cx="50" cy="38" rx="24" ry="15" fill={color}/>
+        </g>
+      );
     case "twin-tails":
       return (
         <g>
           <ellipse cx="50" cy="38" rx="23" ry="15" fill={color}/>
           <ellipse cx="24" cy="72" rx="7" ry="18" fill={color}/>
           <ellipse cx="76" cy="72" rx="7" ry="18" fill={color}/>
+        </g>
+      );
+    case "drills":
+      return (
+        <g>
+          <ellipse cx="50" cy="38" rx="22" ry="15" fill={color}/>
+          <circle cx="24" cy="60" r="5" fill={color}/>
+          <circle cx="24" cy="72" r="4.5" fill={color}/>
+          <circle cx="24" cy="82" r="4" fill={color}/>
+          <circle cx="76" cy="60" r="5" fill={color}/>
+          <circle cx="76" cy="72" r="4.5" fill={color}/>
+          <circle cx="76" cy="82" r="4" fill={color}/>
         </g>
       );
     case "bob":
@@ -92,11 +178,28 @@ function HairBack({ style, color }) {
           <ellipse cx="79" cy="88" rx="3" ry="3" fill={color}/>
         </g>
       );
+    case "side-braid":
+      return (
+        <g>
+          <ellipse cx="50" cy="40" rx="24" ry="16" fill={color}/>
+          <ellipse cx="30" cy="58" rx="6" ry="5" fill={color}/>
+          <ellipse cx="27" cy="68" rx="5" ry="4" fill={color}/>
+          <ellipse cx="24" cy="78" rx="4" ry="4" fill={color}/>
+          <ellipse cx="21" cy="88" rx="3" ry="3" fill={color}/>
+        </g>
+      );
     case "ponytail":
       return (
         <g>
           <ellipse cx="50" cy="35" rx="23" ry="14" fill={color}/>
           <ellipse cx="82" cy="62" rx="6" ry="22" fill={color}/>
+        </g>
+      );
+    case "high-ponytail":
+      return (
+        <g>
+          <ellipse cx="50" cy="40" rx="22" ry="15" fill={color}/>
+          <path d="M50 12 Q62 18 58 34 Q54 26 46 30 Q44 20 50 12 Z" fill={color}/>
         </g>
       );
     case "asymmetric-bob":
@@ -115,11 +218,19 @@ function HairBack({ style, color }) {
           <rect x="47" y="26" width="6" height="6" fill={color}/>
         </g>
       );
+    case "long-with-forelock":
+      return (
+        <g>
+          <rect x="26" y="42" width="48" height="58" fill={color}/>
+          <ellipse cx="50" cy="40" rx="24" ry="16" fill={color}/>
+        </g>
+      );
     case "short-spiky":
     case "short-swept":
     case "buzz":
+    case "pixie":
     default:
-      return null; // no hair behind head for these styles
+      return null;
   }
 }
 
@@ -130,10 +241,21 @@ function HairFront({ style, color }) {
         <path d="M28 44 Q28 22 50 22 Q72 22 72 44 L68 38 L64 42 L58 34 L52 44 L46 34 L40 42 L34 38 L32 42 Z" fill={color}/>
       );
     case "long-straight":
+    case "long-wavy":
+    case "wavy-long":
       return (
         <path d="M28 44 Q40 38 50 42 Q60 38 72 44 L70 52 Q50 46 30 52 Z" fill={color}/>
       );
+    case "hime":
+      return (
+        <g>
+          <rect x="28" y="42" width="6" height="20" fill={color}/>
+          <rect x="66" y="42" width="6" height="20" fill={color}/>
+          <path d="M28 42 Q40 34 50 40 Q60 34 72 42 L72 48 L28 48 Z" fill={color}/>
+        </g>
+      );
     case "twin-tails":
+    case "drills":
       return (
         <path d="M30 42 Q40 36 50 40 Q60 36 70 42 L68 50 Q50 44 32 50 Z" fill={color}/>
       );
@@ -146,6 +268,7 @@ function HairFront({ style, color }) {
         <path d="M28 44 Q28 24 50 24 Q72 24 72 44 L70 40 Q60 32 42 38 Q32 42 30 46 Z" fill={color}/>
       );
     case "ponytail":
+    case "high-ponytail":
       return (
         <path d="M28 42 Q50 36 72 42 L70 48 Q50 42 30 48 Z" fill={color}/>
       );
@@ -158,6 +281,7 @@ function HairFront({ style, color }) {
         <path d="M28 44 Q40 32 50 40 Q60 32 72 44 L70 50 Q50 44 30 50 Z" fill={color}/>
       );
     case "braid":
+    case "side-braid":
     case "asymmetric-bob":
       return (
         <path d="M28 44 Q40 38 50 42 Q60 38 72 44 L70 50 Q50 46 30 50 Z" fill={color}/>
@@ -165,6 +289,17 @@ function HairFront({ style, color }) {
     case "top-knot":
       return (
         <path d="M30 44 Q40 38 50 40 Q60 38 70 44 L68 50 Q50 44 32 50 Z" fill={color}/>
+      );
+    case "pixie":
+      return (
+        <path d="M28 46 Q28 22 50 22 Q72 22 72 46 L68 42 Q60 38 50 40 Q40 38 32 42 Z" fill={color}/>
+      );
+    case "long-with-forelock":
+      return (
+        <g>
+          <path d="M28 44 Q42 34 60 42 L58 62 L44 60 Z" fill={color}/>
+          <path d="M62 44 Q70 40 72 46 L68 50 Q64 46 62 44 Z" fill={color}/>
+        </g>
       );
     default:
       return null;
@@ -236,6 +371,63 @@ function Accessory({ kind }) {
       return (
         <circle cx="31" cy="62" r="2" fill="#c8c8d8"/>
       );
+    case "forehead-jewel":
+      return (
+        <g>
+          <circle cx="50" cy="41" r="2.6" fill="#c43a5a"/>
+          <circle cx="49" cy="40" r="0.9" fill="#f0a0b8" opacity="0.9"/>
+        </g>
+      );
+    case "scar-cheek":
+      return (
+        <line x1="34" y1="46" x2="42" y2="60" stroke="#a04030" strokeWidth="1.4" strokeLinecap="round"/>
+      );
+    case "flower":
+      return (
+        <g transform="translate(30 35)">
+          <circle cx="0" cy="0" r="2" fill="#e8b048"/>
+          <circle cx="-2.4" cy="-1" r="1.8" fill="#e484aa"/>
+          <circle cx="2.4" cy="-1" r="1.8" fill="#e484aa"/>
+          <circle cx="-1" cy="2" r="1.8" fill="#e484aa"/>
+          <circle cx="1" cy="2" r="1.8" fill="#e484aa"/>
+        </g>
+      );
+    case "tribal-mark":
+      return (
+        <g>
+          <path d="M36 52 L34 58 L32 54" fill="none" stroke="#a03830" strokeWidth="1.3" strokeLinecap="round"/>
+          <path d="M64 52 L66 58 L68 54" fill="none" stroke="#a03830" strokeWidth="1.3" strokeLinecap="round"/>
+        </g>
+      );
+    case "feather":
+      return (
+        <g>
+          <path d="M74 24 Q80 30 74 40 Q72 34 68 32 Z" fill="#e8b048"/>
+          <line x1="74" y1="24" x2="70" y2="42" stroke="#8a5020" strokeWidth="0.8"/>
+        </g>
+      );
+    case "horns":
+      return (
+        <g>
+          <path d="M36 24 Q34 14 40 12 Q42 18 42 26 Z" fill="#5a4032" stroke="#2a1a10" strokeWidth="0.6"/>
+          <path d="M64 24 Q66 14 60 12 Q58 18 58 26 Z" fill="#5a4032" stroke="#2a1a10" strokeWidth="0.6"/>
+        </g>
+      );
+    case "glasses":
+      return (
+        <g fill="none" stroke="#2a2020" strokeWidth="1.2">
+          <circle cx="42" cy="56" r="4"/>
+          <circle cx="58" cy="56" r="4"/>
+          <line x1="46" y1="56" x2="54" y2="56"/>
+        </g>
+      );
+    case "veil-back":
+      return (
+        <g>
+          <path d="M22 42 Q22 62 30 80 L30 100 L20 100 L20 42 Z" fill="#f0e0c8" opacity="0.75"/>
+          <path d="M78 42 Q78 62 70 80 L70 100 L80 100 L80 42 Z" fill="#f0e0c8" opacity="0.75"/>
+        </g>
+      );
     default:
       return null;
   }
@@ -275,14 +467,11 @@ function PortraitSvg({ preset, size }) {
   );
 }
 
-// Preferred entry-point for callers. Returns preset object for a name.
 function getPortrait(seatIdx, name) {
   void seatIdx;
   return portraitPresetForName(name);
 }
 
-// Colors for a given seat (safe-indexed). Retained for backwards-
-// compatible fallback use.
 function portraitColors(seatIdx) {
   return PORTRAIT_COLORS[seatIdx] || PORTRAIT_COLORS[0];
 }
