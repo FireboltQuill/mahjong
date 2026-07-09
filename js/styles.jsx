@@ -150,6 +150,88 @@ function makeStyles(vw, vh) {
     display: "flex", justifyContent: "center",
     padding: `${s(10)}px ${s(20)}px`, borderTop: `1px solid rgba(201,169,97,0.2)`, flexShrink: 0,
   },
+  // ---- Daily challenge modal (spec §9.9) ----
+  // Top header showing the date + a small countdown chip.
+  dailyHeaderRow: {
+    display: "flex", justifyContent: "space-between", alignItems: "center",
+    marginBottom: s(14),
+  },
+  dailyDateBlock: { display: "flex", flexDirection: "column", gap: s(2) },
+  dailyDateLabel: {
+    color: greenDim, fontSize: ts(10), letterSpacing: 1.5,
+    textTransform: "uppercase", fontWeight: "bold",
+  },
+  dailyDateValue: {
+    color: gold, fontSize: s(20), fontWeight: "bold",
+    letterSpacing: 1, fontFamily: "monospace",
+  },
+  dailyCountdown: {
+    color: green, fontSize: ts(11),
+    background: "rgba(0,0,0,0.3)", border: `1px solid rgba(201,169,97,0.18)`,
+    padding: `${s(4)}px ${s(10)}px`, borderRadius: s(12),
+    whiteSpace: "nowrap",
+  },
+  // Big status pill — "available" (gold-tinted) vs "already played"
+  // (neutral gray-green). Replaces the previous identical-looking lines.
+  dailyStatusPill: {
+    textAlign: "center",
+    padding: `${s(10)}px ${s(14)}px`,
+    borderRadius: s(8),
+    marginBottom: s(14),
+    fontSize: ts(13), fontWeight: "bold", letterSpacing: 0.5,
+  },
+  dailyStatusAvailable: {
+    color: gold,
+    background: "rgba(201,169,97,0.12)",
+    border: `1px solid rgba(201,169,97,0.4)`,
+  },
+  dailyStatusPlayed: {
+    color: green,
+    background: "rgba(0,0,0,0.25)",
+    border: `1px solid rgba(120,120,120,0.25)`,
+  },
+  // Recorded result panel — rendered only when there's a played entry.
+  dailyResultPanel: {
+    background: "rgba(0,0,0,0.3)",
+    border: `1px solid rgba(201,169,97,0.18)`,
+    borderRadius: s(8),
+    padding: `${s(10)}px ${s(14)}px`,
+    marginBottom: s(14),
+  },
+  dailyResultRow: {
+    display: "flex", justifyContent: "space-between", alignItems: "center",
+    padding: `${s(3)}px 0`, fontSize: ts(13),
+  },
+  dailyResultLabel: { color: green, letterSpacing: 0.5 },
+  dailyResultValue: { color: gold, fontWeight: "bold", fontFamily: "monospace" },
+  dailyResultBadgeWon: {
+    color: "#7ec78a", fontWeight: "bold",
+    fontSize: ts(11), letterSpacing: 1.2, textTransform: "uppercase",
+  },
+  dailyResultBadgeLost: {
+    color: "#d4a0a0", fontWeight: "bold",
+    fontSize: ts(11), letterSpacing: 1.2, textTransform: "uppercase",
+  },
+  // Streak callout — single line, prominent if > 0.
+  dailyStreakBox: {
+    display: "flex", justifyContent: "space-between", alignItems: "center",
+    padding: `${s(8)}px ${s(14)}px`,
+    background: "rgba(201,169,97,0.06)",
+    border: `1px solid rgba(201,169,97,0.18)`,
+    borderRadius: s(8),
+    marginBottom: s(14),
+  },
+  dailyStreakLabel: {
+    color: green, fontSize: ts(12),
+    textTransform: "uppercase", letterSpacing: 1.2,
+  },
+  dailyStreakValue: { color: gold, fontWeight: "bold", fontSize: s(18) },
+  // Small italic footnote.
+  dailyNote: {
+    color: greenDim, fontSize: ts(10),
+    textAlign: "center", lineHeight: 1.5, fontStyle: "italic",
+    marginTop: s(4),
+  },
   // Compact icon-only buttons for secondary menu actions (Help, Stats,
   // Names, Admin). The full label appears as a title tooltip on hover.
   menuIconBtn: {
