@@ -37,13 +37,13 @@ const PORTRAIT_PRESETS = [
   { id: 11, bg: "#7a5a8a", bgAlt: "#5a3a70", hair: "#e8d0a0", hairStyle: "drills",            skin: "#f0d8c0", eye: "#6a3a2a", accessory: "ribbon-pink" },  // Lili: blonde drills, princess pastel pink
   // 12..15 — Bleach group.
   { id: 12, bg: "#2a4a3a", bgAlt: "#153a2a", hair: "#241820", hairStyle: "braid",             skin: "#e0c0a0", eye: "#3a2a20", accessory: null },           // Retsu: black front braid, healer green
-  { id: 13, bg: "#4a6a8a", bgAlt: "#2a4a6a", hair: "#e8e0d8", hairStyle: "long-straight",     skin: "#f0e0d8", eye: "#6a7a9a", accessory: null },           // Sode no Shirayuki: white ice-spirit
+  { id: 13, bg: "#4a6a8a", bgAlt: "#2a4a6a", hair: "#e8e0d8", hairStyle: "long-straight",     skin: "#dcbfa8", eye: "#4a6a8a", accessory: null },           // Sode no Shirayuki: white ice-spirit
   { id: 14, bg: "#4a2a5a", bgAlt: "#2a1a35", hair: "#4a2a4a", hairStyle: "high-ponytail",     skin: "#8a5a3a", eye: "#d8a848", accessory: null },           // Yoruichi: dark skin, purple ponytail, cat eyes
   { id: 15, bg: "#7a5a3a", bgAlt: "#4a3018", hair: "#d8b078", hairStyle: "hime",              skin: "#f0d8b8", eye: "#6a4a2a", accessory: "veil-back" },   // Senjumaru: blonde hime, veil trailing
   // 16..19 — Naruto group.
   { id: 16, bg: "#2a5a5a", bgAlt: "#1a3a3a", hair: "#a83030", hairStyle: "long-with-forelock", skin: "#e8c8a8", eye: "#3a5a4a", accessory: "headband-red" }, // Mei: red hair covering one eye, Mist palette
   { id: 17, bg: "#6a5a2a", bgAlt: "#4a3a15", hair: "#d8c090", hairStyle: "twin-tails",        skin: "#dcb888", eye: "#3a5a4a", accessory: "headband-white" }, // Temari: blonde ponytails, Sand village
-  { id: 18, bg: "#6a6a8a", bgAlt: "#3a3a5a", hair: "#e8e0d8", hairStyle: "long-straight",     skin: "#f0e0d0", eye: "#b83a4a", accessory: "horns" },       // Kaguya: white long, horns, lunar palette
+  { id: 18, bg: "#6a6a8a", bgAlt: "#3a3a5a", hair: "#e8e0d8", hairStyle: "long-straight",     skin: "#dcbba4", eye: "#b83a4a", accessory: "horns" },       // Kaguya: white long, horns, lunar palette
   { id: 19, bg: "#4a5a7a", bgAlt: "#2a3a5a", hair: "#d8b078", hairStyle: "bob",               skin: "#e8d0b8", eye: "#4a5a7a", accessory: "earring-silver" }, // Samui: blonde bob, Cloud cerulean
   // 20..23 — One Piece group.
   { id: 20, bg: "#4a2a5a", bgAlt: "#2a1a3a", hair: "#241820", hairStyle: "wavy-long",         skin: "#e8c8a8", eye: "#4a2a5a", accessory: null },           // Robin: black wavy, historian purple
@@ -461,13 +461,17 @@ function PortraitSvg({ preset, size }) {
       </defs>
       <rect width="100" height="100" fill={`url(#${gid})`}/>
       <HairBack style={p.hairStyle} color={p.hair}/>
-      <ellipse cx="50" cy="56" rx="18" ry="22" fill={p.skin}/>
+      <ellipse cx="50" cy="56" rx="18" ry="22" fill={p.skin} stroke="rgba(0,0,0,0.22)" strokeWidth="0.5"/>
       <rect x="43" y="73" width="14" height="12" fill={p.skin}/>
       <path d="M18 100 Q18 84 40 80 L60 80 Q82 84 82 100 Z" fill={p.bgAlt || p.bg} opacity="0.85"/>
       <HairFront style={p.hairStyle} color={p.hair}/>
-      <ellipse cx="43" cy="56" rx="1.7" ry="1.3" fill={p.eye}/>
-      <ellipse cx="57" cy="56" rx="1.7" ry="1.3" fill={p.eye}/>
-      <path d="M46 66 Q50 68 54 66" fill="none" stroke="#5a3020" strokeWidth="0.8" strokeLinecap="round"/>
+      <path d="M40 53 Q43 51 46 53" fill="none" stroke="#3a2416" strokeWidth="1.2" strokeLinecap="round" opacity="0.85"/>
+      <path d="M54 53 Q57 51 60 53" fill="none" stroke="#3a2416" strokeWidth="1.2" strokeLinecap="round" opacity="0.85"/>
+      <ellipse cx="43" cy="57" rx="2.1" ry="1.7" fill={p.eye}/>
+      <ellipse cx="57" cy="57" rx="2.1" ry="1.7" fill={p.eye}/>
+      <ellipse cx="43.5" cy="56.4" rx="0.5" ry="0.5" fill="rgba(255,255,255,0.7)"/>
+      <ellipse cx="57.5" cy="56.4" rx="0.5" ry="0.5" fill="rgba(255,255,255,0.7)"/>
+      <path d="M46 66 Q50 68.5 54 66" fill="none" stroke="#4a2818" strokeWidth="1.1" strokeLinecap="round"/>
       <Accessory kind={p.accessory}/>
     </svg>
   );
