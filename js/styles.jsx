@@ -10,6 +10,38 @@ const bg = "#0d1f17";
 const bgLight = "#1a3a2a";
 const felt = "linear-gradient(160deg, #1a3a2a 0%, #0d1f17 40%, #142e20 100%)";
 
+// Global keyframes for tile animations (spec §10.4.1). Injected into a
+// <style> block by main.jsx so per-tile animation shortcuts in the S.*
+// objects can name-reference them. Also see @media (prefers-reduced-
+// motion: reduce) block that neuters everything for accessibility.
+const TILE_ANIM_KEYFRAMES = `
+@keyframes tile-draw {
+  0%   { opacity: 0; transform: translateY(-12px) scale(0.96); }
+  60%  { opacity: 1; transform: translateY(2px)   scale(1.02); }
+  100% { opacity: 1; transform: translateY(0)     scale(1);    }
+}
+@keyframes tile-discard {
+  0%   { opacity: 0; transform: translateY(-8px) scale(0.9); }
+  50%  { opacity: 1; transform: translateY(2px)  scale(1.05); }
+  100% { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+@keyframes claim-pop {
+  0%   { transform: scale(0.8); }
+  55%  { transform: scale(1.10); }
+  100% { transform: scale(1);    }
+}
+@keyframes win-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  @keyframes tile-draw    { from { opacity: 1; } to { opacity: 1; } }
+  @keyframes tile-discard { from { opacity: 1; } to { opacity: 1; } }
+  @keyframes claim-pop    { from { transform: none; } to { transform: none; } }
+  @keyframes win-shimmer  { from { background-position: 0 0; } to { background-position: 0 0; } }
+}
+`;
+
 function calcScale(vw, vh) {
   const baseW = 1200, baseH = 800;
   return Math.min(Math.max(Math.min(vw / baseW, vh / baseH), 0.45), 1.4);
@@ -467,6 +499,30 @@ function makeStyles(vw, vh) {
     transform: `translateY(-${s(10)}px)`, filter: "brightness(1.15)",
   },
   handTileClickable: { cursor: "pointer", outline: "none" },
+  // Tile animations (spec §10). Each keyframe name maps 1:1 to
+  // state.tileAnims[id].kind. Injected as a global <style> block by
+  // main.jsx (see TILE_ANIM_KEYFRAMES below) — inline styles can't
+  // define @keyframes. The per-kind animation shortcut objects live
+  // here so they can be composed into a tile's style prop.
+  animDraw: {
+    animation: "tile-draw 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both",
+  },
+  animDiscard: {
+    animation: "tile-discard 280ms cubic-bezier(0.4, 0, 0.2, 1) both",
+  },
+  animClaimPop: {
+    animation: "claim-pop 320ms cubic-bezier(0.34, 1.56, 0.64, 1) both",
+    zIndex: 1,
+  },
+  // win-shimmer runs on the container wrapping the winning hand,
+  // not per-tile — the sweep glides across the whole row.
+  winShimmerContainer: {
+    backgroundImage:
+      "linear-gradient(115deg, transparent 25%, rgba(255,215,100,0.55) 50%, transparent 75%)",
+    backgroundSize: "200% 100%",
+    animation: "win-shimmer 1400ms linear 1",
+    borderRadius: s(8),
+  },
   // Training-mode hint (spec §5.4). Gold glow + "↑ best" tag positioned
   // above the tile so it doesn't get clipped near the bottom of the
   // viewport. The badge needs position: absolute, so the tile gets

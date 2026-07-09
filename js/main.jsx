@@ -74,6 +74,23 @@ function MahjongGame() {
   const saveTimerRef = useRef(null);
   const flushSaveRef = useRef(() => {});
   const resumeClearedRef = useRef(false);
+  // Tile animation infrastructure (spec §10). tileAnimsState holds
+  // {[tileId]: {kind, gen}} — the per-kind CSS animation shortcut is
+  // composed into the tile's style prop via animStyleFor. animGenRef
+  // is the monotonic generation counter used by the latest-wins timer
+  // cleanup pattern per §10.3. tileRefsRef is the FLIP callback-ref
+  // map keyed on tile.id per §10.5. animTimersRef stores the cleanup
+  // timers per §10.6.
+  const [tileAnimsState, setTileAnimsState] = useState({});
+  const animGenRef = useRef(0);
+  const tileRefsRef = useRef(new Map());
+  const animTimersRef = useRef(new Map());
+  // §10.7 — respect prefers-reduced-motion. Detected once at mount and
+  // whenever the media query changes. When true, pushAnim is a no-op.
+  const [reducedMotion, setReducedMotion] = useState(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return false;
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  });
 
   // Localization helpers
   const L = LANG[lang];
@@ -113,6 +130,98 @@ function MahjongGame() {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
+
+  // §10.7 — react to OS-level prefers-reduced-motion changes.
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const onChange = (e) => setReducedMotion(!!e.matches);
+    if (mq.addEventListener) mq.addEventListener("change", onChange);
+    else if (mq.addListener) mq.addListener(onChange);
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener("change", onChange);
+      else if (mq.removeListener) mq.removeListener(onChange);
+    };
+  }, []);
+
+  // Anim queue for cases where the animating tile isn't known until
+  // after setState returns (AI auto-play). Producers push {id, kind}
+  // pairs onto pendingAnimsRef; a post-render effect flushes them
+  // through pushAnim. Runs outside the setState updater so Strict Mode
+  // and functional-update replays don't misfire animations.
+  const pendingAnimsRef = useRef([]);
+  useEffect(() => {
+    if (pendingAnimsRef.current.length === 0) return;
+    const batch = pendingAnimsRef.current;
+    pendingAnimsRef.current = [];
+    for (const { id, kind } of batch) pushAnim(id, kind);
+  });
+
+  // §10.3 — latest-wins collision policy. When a new animation starts for
+  // a tile:
+  //  1) Cancel any existing timer for that tile so the OLDER timer can't
+  //     delete the NEWER entry.
+  //  2) Write the new {kind, gen} with a fresh generation.
+  //  3) Schedule a cleanup timer that deletes only if state.tileAnims[id]
+  //     still has the captured gen — otherwise a subsequent pushAnim
+  //     overtook it and this cleanup no-ops.
+  //  Skip entirely under reduced motion (§10.7).
+  const ANIM_TTLS = { draw: 240, discard: 280, "claim-pop": 320 };
+  function pushAnim(tileId, kind) {
+    if (reducedMotion) return;
+    if (!tileId || !ANIM_TTLS[kind]) return;
+    const gen = ++animGenRef.current;
+    const prev = animTimersRef.current.get(tileId);
+    if (prev) clearTimeout(prev);
+    setTileAnimsState((cur) => ({ ...cur, [tileId]: { kind, gen } }));
+    const timer = setTimeout(() => {
+      setTileAnimsState((cur) => {
+        const entry = cur[tileId];
+        if (!entry || entry.gen !== gen) return cur;
+        const { [tileId]: _drop, ...rest } = cur;
+        return rest;
+      });
+      animTimersRef.current.delete(tileId);
+    }, ANIM_TTLS[kind] + 60); // small grace so CSS finishes before removal
+    animTimersRef.current.set(tileId, timer);
+  }
+
+  // §10.5 — FLIP callback ref map. Currently unused (draw/discard/claim
+  // animations are CSS-only), but populated so a future WAAPI FLIP
+  // upgrade can measure hand→pool positions.
+  function registerTileRef(tileId, el) {
+    if (el) tileRefsRef.current.set(tileId, el);
+    else tileRefsRef.current.delete(tileId);
+  }
+
+  // Compose the per-kind animation shortcut into a tile's style prop.
+  // Returns an empty object when the tile has no active animation.
+  function animStyleFor(tileId) {
+    const entry = tileAnimsState[tileId];
+    if (!entry) return {};
+    if (entry.kind === "draw") return S.animDraw;
+    if (entry.kind === "discard") return S.animDiscard;
+    if (entry.kind === "claim-pop") return S.animClaimPop;
+    return {};
+  }
+
+  // §10.6 — cleanup on unmount + round transition. Clearing the timers
+  // map on round transition prevents stale animations from the just-
+  // finished round from applying to the fresh round's tiles (which have
+  // freshly assigned ids per §9.4).
+  useEffect(() => {
+    return () => {
+      animTimersRef.current.forEach((t) => clearTimeout(t));
+      animTimersRef.current.clear();
+      tileRefsRef.current.clear();
+    };
+  }, []);
+  useEffect(() => {
+    // Round transition — clear animation state and pending timers.
+    animTimersRef.current.forEach((t) => clearTimeout(t));
+    animTimersRef.current.clear();
+    setTileAnimsState({});
+  }, [state.roundNumber]);
 
   // Persist training-mode menu setting (spec §5.3). Scalar key, no
   // versioning — see §18 registry.
@@ -377,6 +486,7 @@ function MahjongGame() {
         return { ...st, isDraw: true, log: [...st.log, _L().logExhaust] };
       }
       const tile = st.wall[0];
+      pendingAnimsRef.current.push({ id: tile.id, kind: "draw" });
       const newWall = st.wall.slice(1);
       const newHand = sortHand([...player.hand, tile]);
       const newPlayers = st.players.map((pl, i) => (i === p ? { ...pl, hand: newHand } : pl));
@@ -387,6 +497,7 @@ function MahjongGame() {
       const cGangs = findConcealedGangs(newHand);
       if (cGangs.length > 0) {
         const gang = cGangs[0];
+        for (const t of gang.tiles) pendingAnimsRef.current.push({ id: t.id, kind: "claim-pop" });
         const afterHand = newHand.filter((t) => !gang.tiles.some((g) => g.id === t.id));
         const newMelds = [...player.openMelds, { ...gang, claimed: false }];
 
@@ -394,6 +505,7 @@ function MahjongGame() {
           return { ...newSt, isDraw: true, log: [...newSt.log, _L().logExhaust] };
         }
         const replacementTile = newSt.wall[0];
+        pendingAnimsRef.current.push({ id: replacementTile.id, kind: "draw" });
         const afterWall = newSt.wall.slice(1);
         const afterHandWithReplacement = sortHand([...afterHand, replacementTile]);
 
@@ -415,6 +527,8 @@ function MahjongGame() {
       const pGangs = findPromotedGangs(playerAfterCGang);
       if (pGangs.length > 0) {
         const pg = pGangs[0];
+        for (const t of playerAfterCGang.openMelds[pg.meldIdx].tiles) pendingAnimsRef.current.push({ id: t.id, kind: "claim-pop" });
+        pendingAnimsRef.current.push({ id: pg.tile.id, kind: "claim-pop" });
         const promotedMeld = { ...playerAfterCGang.openMelds[pg.meldIdx], type: "gang", tiles: [...playerAfterCGang.openMelds[pg.meldIdx].tiles, pg.tile] };
         const newMelds = playerAfterCGang.openMelds.map((m, i) => i === pg.meldIdx ? promotedMeld : m);
         const handMinusTile = playerAfterCGang.hand.filter((t) => t.id !== pg.tile.id);
@@ -423,6 +537,7 @@ function MahjongGame() {
           return { ...newSt, isDraw: true, log: [...newSt.log, _L().logExhaust] };
         }
         const replacementTile = newSt.wall[0];
+        pendingAnimsRef.current.push({ id: replacementTile.id, kind: "draw" });
         const afterWall = newSt.wall.slice(1);
         const handAfterReplacement = sortHand([...handMinusTile, replacementTile]);
 
@@ -451,6 +566,7 @@ function MahjongGame() {
     if (st.phase === "discard" && st.turnDrawn) {
       const discardIdx = aiChooseDiscard(player.hand, player.openMelds, st.players, diffRef.current, (st.personalities || [])[p] || "generic", st.wall.length, p);
       const discarded = player.hand[discardIdx];
+      pendingAnimsRef.current.push({ id: discarded.id, kind: "discard" });
       const newHand = player.hand.filter((_, i) => i !== discardIdx);
       const newPlayers = st.players.map((pl, i) =>
         i === p ? { ...pl, hand: newHand, discards: [...pl.discards, discarded] } : pl
@@ -585,6 +701,9 @@ function MahjongGame() {
     }
 
     const opt = claim.option;
+    // Claim-pop on every tile that lands in the new open meld — the
+    // 2-3 tiles from hand plus the discarded tile itself.
+    for (const t of opt.tiles) pendingAnimsRef.current.push({ id: t.id, kind: "claim-pop" });
     const newHand = player.hand.filter((t) => !opt.fromHand.some((f) => f.id === t.id));
     const meld = { type: opt.type, tiles: opt.tiles, claimed: true };
     const newMelds = [...player.openMelds, meld];
@@ -616,6 +735,7 @@ function MahjongGame() {
         return { ...newSt, isDraw: true, log: [...newSt.log, _L().logExhaust] };
       }
       const replacement = newSt.wall[0];
+      pendingAnimsRef.current.push({ id: replacement.id, kind: "draw" });
       const afterWall = newSt.wall.slice(1);
       const afterHand = sortHand([...newHand, replacement]);
       newSt.players = newSt.players.map((pl, i) => (i === p ? { ...pl, hand: afterHand } : pl));
@@ -645,6 +765,14 @@ function MahjongGame() {
 
   // Player actions
   function handlePlayerDraw() {
+    // Peek the tile for the animation before setState — side effect must
+    // stay outside the updater per §13.5 (Strict Mode double-invocation
+    // would fire pushAnim twice, but pushAnim is itself idempotent per
+    // §10.3 latest-wins so this is defence-in-depth).
+    const peek = state.wall[0];
+    if (state.currentTurn === PLAYER_IDX && state.phase === "draw" && peek) {
+      pushAnim(peek.id, "draw");
+    }
     setState((prev) => {
       if (prev.currentTurn !== PLAYER_IDX || prev.phase !== "draw") return prev;
       if (prev.wall.length === 0) {
@@ -676,6 +804,12 @@ function MahjongGame() {
   }
 
   function handlePlayerDiscard(tileIdx) {
+    // Discard animation runs on the tile once it lands in the pool.
+    const player0 = state.players[PLAYER_IDX];
+    if (state.currentTurn === PLAYER_IDX && state.phase === "discard" && state.turnDrawn) {
+      const t = player0.hand[tileIdx];
+      if (t) pushAnim(t.id, "discard");
+    }
     setState((prev) => {
       if (prev.currentTurn !== PLAYER_IDX || prev.phase !== "discard" || !prev.turnDrawn) return prev;
       const player = prev.players[PLAYER_IDX];
@@ -715,6 +849,11 @@ function MahjongGame() {
   }
 
   function handleDeclareConcealedGang(tiles) {
+    // Pop the 4 gang tiles as they land in the open meld, and animate
+    // the replacement draw. Enqueued for post-render flush per §13.5.
+    for (const t of tiles) pendingAnimsRef.current.push({ id: t.id, kind: "claim-pop" });
+    const rep = state.wall[0];
+    if (rep) pendingAnimsRef.current.push({ id: rep.id, kind: "draw" });
     setState((prev) => {
       if (prev.currentTurn !== PLAYER_IDX || prev.phase !== "discard") return prev;
       const player = prev.players[PLAYER_IDX];
@@ -747,6 +886,15 @@ function MahjongGame() {
   // handleDeclareConcealedGang — both must run during the human's
   // discard window and both consume the wall's next tile.
   function handleDeclarePromotedGang(meldIdx, tile) {
+    // Animate all 4 gang tiles (the existing 3 in peng + the new one)
+    // plus the replacement draw.
+    const meldNow = state.players[PLAYER_IDX].openMelds[meldIdx];
+    if (meldNow) {
+      for (const t of meldNow.tiles) pendingAnimsRef.current.push({ id: t.id, kind: "claim-pop" });
+    }
+    pendingAnimsRef.current.push({ id: tile.id, kind: "claim-pop" });
+    const rep = state.wall[0];
+    if (rep) pendingAnimsRef.current.push({ id: rep.id, kind: "draw" });
     setState((prev) => {
       if (prev.currentTurn !== PLAYER_IDX || prev.phase !== "discard" || !prev.turnDrawn) return prev;
       const player = prev.players[PLAYER_IDX];
@@ -800,6 +948,14 @@ function MahjongGame() {
   }
 
   function handlePlayerClaim(accept, option) {
+    // Enqueue claim-pop on the tiles that will form the new meld.
+    if (accept && state.awaitingPlayerClaim) {
+      const claim = state.awaitingPlayerClaim;
+      const opt = option || claim.option;
+      if (opt && opt.tiles) {
+        for (const t of opt.tiles) pendingAnimsRef.current.push({ id: t.id, kind: "claim-pop" });
+      }
+    }
     setState((prev) => {
       if (!prev.awaitingPlayerClaim) return prev;
       const claim = prev.awaitingPlayerClaim;
@@ -1161,10 +1317,10 @@ function MahjongGame() {
         </div>
         {opp.openMelds.length > 0 && (
           <div style={S.oppMeldsRow}>
-            {opp.openMelds.map((m, mi) => (
-              <div key={mi} style={S.oppMeldGroup}>
-                {m.tiles.map((t, ti) => (
-                  <span key={ti} style={{ ...S.oppMeldTile, ...(m.concealed ? S.concealedTile : {}) }}>
+            {opp.openMelds.map((m) => (
+              <div key={m.tiles[0].id} style={S.oppMeldGroup}>
+                {m.tiles.map((t) => (
+                  <span key={t.id} style={{ ...S.oppMeldTile, ...(m.concealed ? S.concealedTile : {}) }}>
                     {m.concealed ? "🀫" : tileSymbol(t)}
                   </span>
                 ))}
@@ -1786,6 +1942,7 @@ function MahjongGame() {
           button:focus, button:active, button:focus-visible {
             box-shadow: none !important;
           }
+          ${TILE_ANIM_KEYFRAMES}
         `}} />
         <div style={S.menuCard}>
           <div style={S.menuMain}>
@@ -1851,6 +2008,7 @@ function MahjongGame() {
         button:focus, button:active, button:focus-visible {
           box-shadow: none !important;
         }
+        ${TILE_ANIM_KEYFRAMES}
       `}} />
       {/* ---- TOP BAR ---- */}
       <div style={S.topBar}>
@@ -1909,9 +2067,9 @@ function MahjongGame() {
                     <div style={S.discardPlayerLabel}>{SL[2]}</div>
                     <div style={S.discardTilesWrap}>
                       {state.players[2].discards.length === 0 && <span style={S.discardEmpty}>—</span>}
-                      {state.players[2].discards.map((t, i) => {
+                      {state.players[2].discards.map((t) => {
                         const isLast = state.lastDiscard && t.id === state.lastDiscard.id;
-                        return <span key={i} style={{ ...S.discardTile, ...(discardDyn || {}), ...(isLast ? S.discardTileLatest : {}) }} title={TN(t)}>{tileSymbol(t)}</span>;
+                        return <span key={t.id} ref={(el) => registerTileRef(t.id, el)} style={{ ...S.discardTile, ...(discardDyn || {}), ...(isLast ? S.discardTileLatest : {}), ...animStyleFor(t.id) }} title={TN(t)}>{tileSymbol(t)}</span>;
                       })}
                     </div>
                   </div>
@@ -1919,9 +2077,9 @@ function MahjongGame() {
                     <div style={S.discardPlayerLabel}>{SL[3]}</div>
                     <div style={S.discardTilesWrap}>
                       {state.players[3].discards.length === 0 && <span style={S.discardEmpty}>—</span>}
-                      {state.players[3].discards.map((t, i) => {
+                      {state.players[3].discards.map((t) => {
                         const isLast = state.lastDiscard && t.id === state.lastDiscard.id;
-                        return <span key={i} style={{ ...S.discardTile, ...(discardDyn || {}), ...(isLast ? S.discardTileLatest : {}) }} title={TN(t)}>{tileSymbol(t)}</span>;
+                        return <span key={t.id} ref={(el) => registerTileRef(t.id, el)} style={{ ...S.discardTile, ...(discardDyn || {}), ...(isLast ? S.discardTileLatest : {}), ...animStyleFor(t.id) }} title={TN(t)}>{tileSymbol(t)}</span>;
                       })}
                     </div>
                   </div>
@@ -1929,9 +2087,9 @@ function MahjongGame() {
                     <div style={S.discardPlayerLabel}>{SL[1]}</div>
                     <div style={S.discardTilesWrap}>
                       {state.players[1].discards.length === 0 && <span style={S.discardEmpty}>—</span>}
-                      {state.players[1].discards.map((t, i) => {
+                      {state.players[1].discards.map((t) => {
                         const isLast = state.lastDiscard && t.id === state.lastDiscard.id;
-                        return <span key={i} style={{ ...S.discardTile, ...(discardDyn || {}), ...(isLast ? S.discardTileLatest : {}) }} title={TN(t)}>{tileSymbol(t)}</span>;
+                        return <span key={t.id} ref={(el) => registerTileRef(t.id, el)} style={{ ...S.discardTile, ...(discardDyn || {}), ...(isLast ? S.discardTileLatest : {}), ...animStyleFor(t.id) }} title={TN(t)}>{tileSymbol(t)}</span>;
                       })}
                     </div>
                   </div>
@@ -1939,9 +2097,9 @@ function MahjongGame() {
                     <div style={S.discardPlayerLabel}>{SL[0]}</div>
                     <div style={S.discardTilesWrap}>
                       {state.players[0].discards.length === 0 && <span style={S.discardEmpty}>—</span>}
-                      {state.players[0].discards.map((t, i) => {
+                      {state.players[0].discards.map((t) => {
                         const isLast = state.lastDiscard && t.id === state.lastDiscard.id;
-                        return <span key={i} style={{ ...S.discardTile, ...(discardDyn || {}), ...(isLast ? S.discardTileLatest : {}) }} title={TN(t)}>{tileSymbol(t)}</span>;
+                        return <span key={t.id} ref={(el) => registerTileRef(t.id, el)} style={{ ...S.discardTile, ...(discardDyn || {}), ...(isLast ? S.discardTileLatest : {}), ...animStyleFor(t.id) }} title={TN(t)}>{tileSymbol(t)}</span>;
                       })}
                     </div>
                   </div>
@@ -1977,10 +2135,10 @@ function MahjongGame() {
             <div style={S.claimBannerBtns}>
               {state.awaitingPlayerClaim.type === "chi" && state.awaitingPlayerClaim.options ? (
                 <>
-                  {state.awaitingPlayerClaim.options.map((opt, i) => (
-                    <button tabIndex={-1} key={i} style={S.claimAccept} onClick={() => handlePlayerClaim(true, opt)}>
+                  {state.awaitingPlayerClaim.options.map((opt) => (
+                    <button tabIndex={-1} key={opt.tiles.map((t) => t.id).join("-")} style={S.claimAccept} onClick={() => handlePlayerClaim(true, opt)}>
                       <span style={S.chiBtnGlyphs}>
-                        {opt.tiles.map((t, ti) => <span key={ti}>{tileSymbol(t)}</span>)}
+                        {opt.tiles.map((t) => <span key={t.id}>{tileSymbol(t)}</span>)}
                       </span>
                     </button>
                   ))}
@@ -2035,10 +2193,10 @@ function MahjongGame() {
         {/* Open melds */}
         {player.openMelds.length > 0 && (
           <div style={S.playerMeldsRow}>
-            {player.openMelds.map((m, mi) => (
-              <div key={mi} style={S.playerMeldGroup}>
-                {m.tiles.map((t, ti) => (
-                  <span key={ti} style={{ ...S.playerMeldTile, ...(m.concealed ? S.concealedTile : {}) }}>
+            {player.openMelds.map((m) => (
+              <div key={m.tiles[0].id} style={S.playerMeldGroup}>
+                {m.tiles.map((t) => (
+                  <span key={t.id} style={{ ...S.playerMeldTile, ...(m.concealed ? S.concealedTile : {}), ...animStyleFor(t.id) }}>
                     {m.concealed ? "🀫" : tileSymbol(t)}
                   </span>
                 ))}
@@ -2057,11 +2215,13 @@ function MahjongGame() {
               <button
                 tabIndex={-1}
                 key={t.id}
+                ref={(el) => registerTileRef(t.id, el)}
                 style={{
                   ...S.handTile,
                   ...(selected ? S.handTileSelected : {}),
                   ...(canDiscard ? S.handTileClickable : {}),
                   ...(isHint ? S.hintHighlight : {}),
+                  ...animStyleFor(t.id),
                 }}
                 onClick={() => {
                   if (canDiscard) {
@@ -2131,7 +2291,7 @@ function MahjongGame() {
                     )}
                     <div style={S.winningHand}>
                       <p style={S.winHandLabel}>{L.winHand}</p>
-                      <div style={S.winTilesRow}>
+                      <div style={{ ...S.winTilesRow, ...(reducedMotion ? {} : S.winShimmerContainer) }}>
                         {(() => {
                           const winId = state.winInfo && state.winInfo.winningTile ? state.winInfo.winningTile.id : null;
                           const tileStyle = (t) =>
@@ -2149,26 +2309,26 @@ function MahjongGame() {
                                   used.add(match.id);
                                 }
                               }
-                              return pairs.map((pair, pi) => (
-                                <div key={pi} style={S.winMeldGroup}>
-                                  {pair.map((t, ti) => (
-                                    <span key={ti} style={tileStyle(t)}>{tileSymbol(t)}</span>
+                              return pairs.map((pair) => (
+                                <div key={pair[0].id} style={S.winMeldGroup}>
+                                  {pair.map((t) => (
+                                    <span key={t.id} style={tileStyle(t)}>{tileSymbol(t)}</span>
                                   ))}
                                 </div>
                               ));
                             })()
                           ) : (
                             <>
-                              {winner.openMelds.map((m, mi) => (
-                                <div key={`m${mi}`} style={S.winMeldGroup}>
-                                  {m.tiles.map((t, ti) => (
-                                    <span key={ti} style={tileStyle(t)}>{tileSymbol(t)}</span>
+                              {winner.openMelds.map((m) => (
+                                <div key={m.tiles[0].id} style={S.winMeldGroup}>
+                                  {m.tiles.map((t) => (
+                                    <span key={t.id} style={tileStyle(t)}>{tileSymbol(t)}</span>
                                   ))}
                                 </div>
                               ))}
                               <div style={S.winMeldGroup}>
-                                {winner.hand.map((t, ti) => (
-                                  <span key={ti} style={tileStyle(t)}>{tileSymbol(t)}</span>
+                                {winner.hand.map((t) => (
+                                  <span key={t.id} style={tileStyle(t)}>{tileSymbol(t)}</span>
                                 ))}
                               </div>
                             </>
