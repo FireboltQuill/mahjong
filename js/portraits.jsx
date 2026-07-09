@@ -19,41 +19,42 @@ const PORTRAIT_COLORS = [
 // accessory. Designed to be visually distinct at 32px via strong bg
 // contrast and clear silhouette differences.
 const PORTRAIT_PRESETS = [
-  // 0..3  — deterministic assignments for Street-Fighter-group names
-  { id: 0,  bg: "#3a4a6a", bgAlt: "#20304a", hair: "#d8b878", hairStyle: "long-wavy",         skin: "#e8d0b0", eye: "#3a5a8a", accessory: "earring-silver" },
-  { id: 1,  bg: "#4a1a3a", bgAlt: "#280a20", hair: "#6a2a5a", hairStyle: "asymmetric-bob",    skin: "#d9b088", eye: "#b83a4a", accessory: "cyber-line" },
-  { id: 2,  bg: "#2a4a5a", bgAlt: "#152a35", hair: "#d8b878", hairStyle: "high-ponytail",     skin: "#e0c0a0", eye: "#3a5a8a", accessory: "tribal-mark" },
-  { id: 3,  bg: "#6a2a3a", bgAlt: "#3a1520", hair: "#241820", hairStyle: "twin-tails",        skin: "#e8c8a8", eye: "#4a3020", accessory: "ribbon-pink" },
-  // 4..7  — Guilty-Gear-group names
-  { id: 4,  bg: "#7a3a5a", bgAlt: "#4a1a35", hair: "#d8b078", hairStyle: "long-with-forelock", skin: "#f0d0b8", eye: "#4a2a2a", accessory: "feather" },
-  { id: 5,  bg: "#2a3a5a", bgAlt: "#152540", hair: "#4a6a9a", hairStyle: "long-straight",     skin: "#e8d8d0", eye: "#5a7a9a", accessory: "horns" },
-  { id: 6,  bg: "#3a3a5a", bgAlt: "#25254a", hair: "#e8dcd0", hairStyle: "pixie",             skin: "#dcc8b8", eye: "#4a2a5a", accessory: "forehead-jewel" },
-  { id: 7,  bg: "#4a2020", bgAlt: "#2a1010", hair: "#a83030", hairStyle: "side-braid",        skin: "#e8c8a8", eye: "#4a3020", accessory: "scar-cheek" },
-  // 8..11 — Tekken-group names
-  { id: 8,  bg: "#6a4a1a", bgAlt: "#4a2a08", hair: "#d8a860", hairStyle: "long-straight",     skin: "#e8c8a8", eye: "#6a4a2a", accessory: "headband-white" },
-  { id: 9,  bg: "#2a4a3a", bgAlt: "#153a2a", hair: "#241820", hairStyle: "long-straight",     skin: "#e8c8a8", eye: "#3a2a20", accessory: "crescent-mark" },
-  { id: 10, bg: "#3a2a5a", bgAlt: "#1a1a4a", hair: "#241820", hairStyle: "wavy-long",         skin: "#a67a58", eye: "#4a2a5a", accessory: "forehead-jewel" },
-  { id: 11, bg: "#5a3a5a", bgAlt: "#3a1a40", hair: "#d8c090", hairStyle: "drills",            skin: "#f0d8c0", eye: "#6a3a2a", accessory: "ribbon-pink" },
-  // 12..15 — Bleach-group names
-  { id: 12, bg: "#2a4a3a", bgAlt: "#153a2a", hair: "#241820", hairStyle: "braid",             skin: "#e0c0a0", eye: "#3a2a20", accessory: null },
-  { id: 13, bg: "#4a6a8a", bgAlt: "#2a4a6a", hair: "#e8e0d8", hairStyle: "long-straight",     skin: "#f0e0d8", eye: "#6a7a9a", accessory: "crescent-mark" },
-  { id: 14, bg: "#4a2a5a", bgAlt: "#2a1a35", hair: "#4a2a4a", hairStyle: "high-ponytail",     skin: "#8a5a3a", eye: "#d8a848", accessory: null },
-  { id: 15, bg: "#7a5a3a", bgAlt: "#4a3018", hair: "#d8b078", hairStyle: "hime",              skin: "#f0d8b8", eye: "#6a4a2a", accessory: "veil-back" },
-  // 16..19 — Naruto-group names
-  { id: 16, bg: "#2a5a4a", bgAlt: "#1a3a2a", hair: "#a83030", hairStyle: "long-straight",     skin: "#e8c8a8", eye: "#3a5a4a", accessory: "headband-red" },
-  { id: 17, bg: "#2a4a2a", bgAlt: "#153020", hair: "#d8c090", hairStyle: "twin-tails",        skin: "#dcb888", eye: "#3a5a4a", accessory: "tribal-mark" },
-  { id: 18, bg: "#7a5a7a", bgAlt: "#4a2a5a", hair: "#e8e0d8", hairStyle: "long-straight",     skin: "#f0e0d0", eye: "#b83a4a", accessory: "horns" },
-  { id: 19, bg: "#4a5a7a", bgAlt: "#2a3a5a", hair: "#d8b078", hairStyle: "bob",               skin: "#e8d0b8", eye: "#4a5a7a", accessory: "earring-silver" },
-  // 20..23 — One Piece-group names
-  { id: 20, bg: "#4a2a5a", bgAlt: "#2a1a3a", hair: "#241820", hairStyle: "wavy-long",         skin: "#e8c8a8", eye: "#4a2a5a", accessory: null },
-  { id: 21, bg: "#5a3a5a", bgAlt: "#3a1a3a", hair: "#241820", hairStyle: "long-straight",     skin: "#e8c8a8", eye: "#4a3020", accessory: "circlet-gold" },
-  { id: 22, bg: "#4a5a7a", bgAlt: "#2a3a5a", hair: "#5a8ac8", hairStyle: "long-straight",     skin: "#e8c8a8", eye: "#3a5a8a", accessory: "circlet-gold" },
-  { id: 23, bg: "#4a3020", bgAlt: "#2a1810", hair: "#b8402a", hairStyle: "long-with-forelock", skin: "#e8c090", eye: "#4a3020", accessory: "glasses" },
-  // 24..27 — Freezing-group names
-  { id: 24, bg: "#3a5a3a", bgAlt: "#1a3a1a", hair: "#e8c890", hairStyle: "long-straight",     skin: "#f0d8b8", eye: "#4a5a3a", accessory: null },
-  { id: 25, bg: "#6a2a3a", bgAlt: "#3a1a25", hair: "#d8b078", hairStyle: "long-straight",     skin: "#e8c8a8", eye: "#4a3a4a", accessory: null },
-  { id: 26, bg: "#4a5a8a", bgAlt: "#2a3a5a", hair: "#e8d0a0", hairStyle: "long-straight",     skin: "#f0d8b8", eye: "#3a5a8a", accessory: "face-mask" },
-  { id: 27, bg: "#3a3a3a", bgAlt: "#1a1a1a", hair: "#181214", hairStyle: "short-swept",       skin: "#e0c0a0", eye: "#4a3020", accessory: "headband-white" },
+  // 0..3 — Street Fighter group. Broad traits: hair colour + silhouette
+  // + general palette + category of accessory. Designs remain original.
+  { id: 0,  bg: "#3a4a6a", bgAlt: "#20304a", hair: "#d8b878", hairStyle: "long-wavy",         skin: "#e8d0b0", eye: "#3a5a8a", accessory: "earring-silver" }, // Manon: blonde wavy, elegant navy
+  { id: 1,  bg: "#4a1a3a", bgAlt: "#280a20", hair: "#3a1a3a", hairStyle: "asymmetric-bob",    skin: "#d9b088", eye: "#8a3aa8", accessory: "cyber-line" },   // Juri: near-black/violet edgy cut, purple eye
+  { id: 2,  bg: "#2a4a3a", bgAlt: "#152a20", hair: "#d8b878", hairStyle: "twin-tails",        skin: "#e0c0a0", eye: "#3a5a8a", accessory: "tribal-mark" }, // Cammy: blonde twin braids, red cheek marks
+  { id: 3,  bg: "#2a4a7a", bgAlt: "#1a3050", hair: "#241820", hairStyle: "twin-tails",        skin: "#e8c8a8", eye: "#4a3020", accessory: "ribbon-pink" }, // Chun Li: black double buns, Chinese blue
+  // 4..7 — Guilty Gear group.
+  { id: 4,  bg: "#7a3a5a", bgAlt: "#4a1a35", hair: "#d8b078", hairStyle: "long-with-forelock", skin: "#f0d0b8", eye: "#4a2a2a", accessory: "feather" },      // Elphelt: blonde with forelock, pink palette
+  { id: 5,  bg: "#2a3a5a", bgAlt: "#152540", hair: "#5a8ac8", hairStyle: "long-straight",     skin: "#e8d8d0", eye: "#7a9ac0", accessory: null },           // Dizzy: light blue long hair, cool blue
+  { id: 6,  bg: "#3a3a5a", bgAlt: "#25254a", hair: "#e8dcd0", hairStyle: "pixie",             skin: "#a67a58", eye: "#4a2a5a", accessory: "forehead-jewel" }, // Ramlethal: white pixie, dark skin, indigo
+  { id: 7,  bg: "#4a2030", bgAlt: "#2a1020", hair: "#e4508a", hairStyle: "side-braid",        skin: "#e8c8a8", eye: "#4a3020", accessory: "eyepatch" },     // Baiken: hot pink side ponytail, eyepatch
+  // 8..11 — Tekken group.
+  { id: 8,  bg: "#6a4a1a", bgAlt: "#4a2a08", hair: "#d8a860", hairStyle: "high-ponytail",     skin: "#e8c8a8", eye: "#6a4a2a", accessory: "headband-white" }, // Lidia: blonde updo, martial-arts amber
+  { id: 9,  bg: "#2a4a3a", bgAlt: "#153a2a", hair: "#241820", hairStyle: "long-straight",     skin: "#e8c8a8", eye: "#3a2a20", accessory: null },           // Jun: black long straight, spiritual jade
+  { id: 10, bg: "#3a2a5a", bgAlt: "#1a1a4a", hair: "#241820", hairStyle: "wavy-long",         skin: "#a67a58", eye: "#4a2a5a", accessory: "forehead-jewel" }, // Zafina: dark skin, black wavy, mystical purple
+  { id: 11, bg: "#7a5a8a", bgAlt: "#5a3a70", hair: "#e8d0a0", hairStyle: "drills",            skin: "#f0d8c0", eye: "#6a3a2a", accessory: "ribbon-pink" },  // Lili: blonde drills, princess pastel pink
+  // 12..15 — Bleach group.
+  { id: 12, bg: "#2a4a3a", bgAlt: "#153a2a", hair: "#241820", hairStyle: "braid",             skin: "#e0c0a0", eye: "#3a2a20", accessory: null },           // Retsu: black front braid, healer green
+  { id: 13, bg: "#4a6a8a", bgAlt: "#2a4a6a", hair: "#e8e0d8", hairStyle: "long-straight",     skin: "#f0e0d8", eye: "#6a7a9a", accessory: null },           // Sode no Shirayuki: white ice-spirit
+  { id: 14, bg: "#4a2a5a", bgAlt: "#2a1a35", hair: "#4a2a4a", hairStyle: "high-ponytail",     skin: "#8a5a3a", eye: "#d8a848", accessory: null },           // Yoruichi: dark skin, purple ponytail, cat eyes
+  { id: 15, bg: "#7a5a3a", bgAlt: "#4a3018", hair: "#d8b078", hairStyle: "hime",              skin: "#f0d8b8", eye: "#6a4a2a", accessory: "veil-back" },   // Senjumaru: blonde hime, veil trailing
+  // 16..19 — Naruto group.
+  { id: 16, bg: "#2a5a5a", bgAlt: "#1a3a3a", hair: "#a83030", hairStyle: "long-with-forelock", skin: "#e8c8a8", eye: "#3a5a4a", accessory: "headband-red" }, // Mei: red hair covering one eye, Mist palette
+  { id: 17, bg: "#6a5a2a", bgAlt: "#4a3a15", hair: "#d8c090", hairStyle: "twin-tails",        skin: "#dcb888", eye: "#3a5a4a", accessory: "headband-white" }, // Temari: blonde ponytails, Sand village
+  { id: 18, bg: "#6a6a8a", bgAlt: "#3a3a5a", hair: "#e8e0d8", hairStyle: "long-straight",     skin: "#f0e0d0", eye: "#b83a4a", accessory: "horns" },       // Kaguya: white long, horns, lunar palette
+  { id: 19, bg: "#4a5a7a", bgAlt: "#2a3a5a", hair: "#d8b078", hairStyle: "bob",               skin: "#e8d0b8", eye: "#4a5a7a", accessory: "earring-silver" }, // Samui: blonde bob, Cloud cerulean
+  // 20..23 — One Piece group.
+  { id: 20, bg: "#4a2a5a", bgAlt: "#2a1a3a", hair: "#241820", hairStyle: "wavy-long",         skin: "#e8c8a8", eye: "#4a2a5a", accessory: null },           // Robin: black wavy, historian purple
+  { id: 21, bg: "#7a3050", bgAlt: "#4a1a35", hair: "#241820", hairStyle: "long-straight",     skin: "#e8c8a8", eye: "#4a3020", accessory: "circlet-gold" }, // Boa: black long, empress heart-red palette
+  { id: 22, bg: "#7a6a3a", bgAlt: "#5a4a20", hair: "#5a8ac8", hairStyle: "long-straight",     skin: "#e8c8a8", eye: "#3a5a8a", accessory: "circlet-gold" }, // Vivi: blue long, Arabian gold + saffron
+  { id: 23, bg: "#7a3a5a", bgAlt: "#4a1a35", hair: "#e484aa", hairStyle: "high-ponytail",     skin: "#f0d8c0", eye: "#4a3020", accessory: null },           // Bonney: pink ponytail, tropical pink
+  // 24..27 — Freezing group.
+  { id: 24, bg: "#3a5a3a", bgAlt: "#1a3a1a", hair: "#e8c890", hairStyle: "bob",               skin: "#f0d8b8", eye: "#4a5a3a", accessory: null },           // Chiffon: blonde bob, calm forest
+  { id: 25, bg: "#6a2a3a", bgAlt: "#3a1a25", hair: "#d8b078", hairStyle: "long-straight",     skin: "#e8c8a8", eye: "#4a3a4a", accessory: null },           // Cassandra: blonde long, garnet warrior
+  { id: 26, bg: "#4a5a8a", bgAlt: "#2a3a5a", hair: "#e8d0a0", hairStyle: "long-wavy",         skin: "#f0d8b8", eye: "#3a5a8a", accessory: null },           // Satellizer: blonde long wavy, azure
+  { id: 27, bg: "#3a3a3a", bgAlt: "#1a1a1a", hair: "#181214", hairStyle: "bob",               skin: "#e0c0a0", eye: "#4a3020", accessory: "headband-red" }, // Kazuha: black bob, red hairband
 ];
 
 // Explicit name → portrait id mapping. Same names as the default
