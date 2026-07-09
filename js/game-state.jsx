@@ -32,6 +32,10 @@ function createInitialState(windRounds = 1, lang = "en", seed, opts = {}) {
   // games use the user's loaded groups.
   const nameGroups = isDaily ? DAILY_NAME_GROUPS : loadNameGroups();
   const { groupName, names } = pickPlayerNames(nameGroups, 4, cosmeticRng);
+  // Phase 7 (§11.4.1) — freeze one line index per seat per reaction kind
+  // so each AI always says the same thing on its first hu of a given
+  // match, and so daily games have deterministic dialogue across users.
+  const reactionSeeds = seedReactionIndices(cosmeticRng);
   const totalRounds = windRounds * 4;
   const startingScore = totalRounds * STARTING_PER_ROUND;
   const round1Seed = seedForRound(matchSeed, 1);
@@ -61,6 +65,8 @@ function createInitialState(windRounds = 1, lang = "en", seed, opts = {}) {
     roundSeeds: { 1: round1Seed },
     dailyGame: isDaily,
     dailyDate,
+    // Phase 7 (§11.4.1) match-scope seed indices for AI reaction lines.
+    reactionSeeds,
     // Per Appendix A.6 / spec §9.4 — track admin-minted tile ids at
     // match scope so they're never reused within a match.
     usedAdminIds: [],
