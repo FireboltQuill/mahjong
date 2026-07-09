@@ -248,24 +248,24 @@ function HairFront({ style, color }) {
     case "long-wavy":
     case "wavy-long":
       return (
-        <path d="M28 44 Q40 38 50 42 Q60 38 72 44 L70 52 Q50 46 30 52 Z" fill={color}/>
+        <path d="M28 38 Q40 28 50 32 Q60 28 72 38 L70 52 Q50 46 30 52 Z" fill={color}/>
       );
     case "hime":
       return (
         <g>
           <rect x="28" y="42" width="6" height="20" fill={color}/>
           <rect x="66" y="42" width="6" height="20" fill={color}/>
-          <path d="M28 42 Q40 34 50 40 Q60 34 72 42 L72 48 L28 48 Z" fill={color}/>
+          <path d="M28 38 Q40 26 50 32 Q60 26 72 38 L72 48 L28 48 Z" fill={color}/>
         </g>
       );
     case "twin-tails":
     case "drills":
       return (
-        <path d="M30 42 Q40 36 50 40 Q60 36 70 42 L68 50 Q50 44 32 50 Z" fill={color}/>
+        <path d="M30 38 Q40 26 50 32 Q60 26 70 38 L68 50 Q50 44 32 50 Z" fill={color}/>
       );
     case "bob":
       return (
-        <path d="M30 42 Q40 38 50 40 Q60 38 70 42 L68 50 Q50 44 32 50 Z" fill={color}/>
+        <path d="M30 38 Q40 28 50 32 Q60 28 70 38 L68 50 Q50 44 32 50 Z" fill={color}/>
       );
     case "short-swept":
       return (
@@ -274,7 +274,7 @@ function HairFront({ style, color }) {
     case "ponytail":
     case "high-ponytail":
       return (
-        <path d="M28 42 Q50 36 72 42 L70 48 Q50 42 30 48 Z" fill={color}/>
+        <path d="M28 38 Q50 26 72 38 L70 48 Q50 42 30 48 Z" fill={color}/>
       );
     case "buzz":
       return (
@@ -282,17 +282,17 @@ function HairFront({ style, color }) {
       );
     case "wild-messy":
       return (
-        <path d="M28 44 Q40 32 50 40 Q60 32 72 44 L70 50 Q50 44 30 50 Z" fill={color}/>
+        <path d="M28 38 Q40 24 50 32 Q60 24 72 38 L70 50 Q50 44 30 50 Z" fill={color}/>
       );
     case "braid":
     case "side-braid":
     case "asymmetric-bob":
       return (
-        <path d="M28 44 Q40 38 50 42 Q60 38 72 44 L70 50 Q50 46 30 50 Z" fill={color}/>
+        <path d="M28 38 Q40 28 50 32 Q60 28 72 38 L70 50 Q50 46 30 50 Z" fill={color}/>
       );
     case "top-knot":
       return (
-        <path d="M30 44 Q40 38 50 40 Q60 38 70 44 L68 50 Q50 44 32 50 Z" fill={color}/>
+        <path d="M30 38 Q40 28 50 32 Q60 28 70 38 L68 50 Q50 44 32 50 Z" fill={color}/>
       );
     case "pixie":
       return (
@@ -301,7 +301,7 @@ function HairFront({ style, color }) {
     case "long-with-forelock":
       return (
         <g>
-          <path d="M28 44 Q40 38 50 42 Q60 38 72 44 L70 52 Q50 46 30 52 Z" fill={color}/>
+          <path d="M28 38 Q40 28 50 32 Q60 28 72 38 L70 52 Q50 46 30 52 Z" fill={color}/>
           <path d="M32 50 Q28 60 34 66 Q37 62 36 50 Z" fill={color}/>
           <path d="M68 50 Q72 60 66 66 Q63 62 64 50 Z" fill={color}/>
         </g>
