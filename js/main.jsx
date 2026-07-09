@@ -1434,7 +1434,7 @@ function MahjongGame() {
         <div style={S.oppHeader}>
           <div style={S.oppHeaderLeft}>
             <span style={S.portraitChip} aria-hidden="true">
-              <PortraitSvg preset={preset} size={44}/>
+              <PortraitSvg preset={preset} size={60}/>
             </span>
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
               <span style={{ ...S.oppName, ...(isActive ? S.oppNameActive : {}) }}>
@@ -2311,7 +2311,7 @@ function MahjongGame() {
       <div style={S.playerSection}>
         <div style={S.playerScoreRow}>
           <span style={S.playerPortraitChip} aria-hidden="true">
-            <PortraitSvg preset={getPortrait(PLAYER_IDX, SL[PLAYER_IDX])} size={48}/>
+            <PortraitSvg preset={getPortrait(PLAYER_IDX, SL[PLAYER_IDX])} size={72}/>
           </span>
           <span style={{ ...S.scoreChip, ...(state.scores[PLAYER_IDX] < 0 ? S.scoreChipBroke : {}) }}>{SL[PLAYER_IDX]}: {state.scores[PLAYER_IDX]} {L.scoreLabel}</span>
         </div>

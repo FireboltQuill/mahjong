@@ -316,15 +316,16 @@ function Accessory({ kind }) {
     case "headband-red":
       return (
         <g>
-          <rect x="26" y="42" width="48" height="5" fill="#b4232a"/>
-          <rect x="26" y="42" width="48" height="1" fill="#e4444a" opacity="0.6"/>
+          <rect x="24" y="40" width="52" height="9" fill="#b4232a"/>
+          <rect x="24" y="40" width="52" height="2" fill="#e4444a" opacity="0.6"/>
         </g>
       );
     case "headband-white":
       return (
         <g>
-          <rect x="26" y="42" width="48" height="5" fill="#f0e8d8"/>
-          <circle cx="50" cy="44.5" r="2.2" fill="#c4232a"/>
+          <rect x="24" y="40" width="52" height="9" fill="#f0e8d8"/>
+          <rect x="24" y="40" width="52" height="1.5" fill="#c8c0b0" opacity="0.6"/>
+          <circle cx="50" cy="44.5" r="3" fill="#c4232a"/>
         </g>
       );
     case "circlet-gold":

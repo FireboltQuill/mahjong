@@ -376,7 +376,7 @@ function makeStyles(vw, vh) {
   // Container is a circle with overflow: hidden; the inline SVG inside
   // fills the container and gets clipped to a circle by overflow.
   portraitChip: {
-    width: s(44), height: s(44),
+    width: s(60), height: s(60),
     borderRadius: "50%",
     overflow: "hidden",
     display: "inline-flex", alignItems: "center", justifyContent: "center",
@@ -387,7 +387,7 @@ function makeStyles(vw, vh) {
   },
   // Slightly larger version used for the player's own score row.
   playerPortraitChip: {
-    width: s(48), height: s(48),
+    width: s(72), height: s(72),
     borderRadius: "50%",
     overflow: "hidden",
     display: "inline-flex", alignItems: "center", justifyContent: "center",
