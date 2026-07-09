@@ -34,11 +34,17 @@ const TILE_ANIM_KEYFRAMES = `
   0%   { background-position: -200% 0; }
   100% { background-position:  200% 0; }
 }
+@keyframes reaction-pop {
+  0%   { opacity: 0; transform: scale(0.6) translateY(6px); }
+  60%  { opacity: 1; transform: scale(1.06) translateY(-1px); }
+  100% { opacity: 1; transform: scale(1)    translateY(0);   }
+}
 @media (prefers-reduced-motion: reduce) {
   @keyframes tile-draw    { from { opacity: 1; } to { opacity: 1; } }
   @keyframes tile-discard { from { opacity: 1; } to { opacity: 1; } }
   @keyframes claim-pop    { from { transform: none; } to { transform: none; } }
   @keyframes win-shimmer  { from { background-position: 0 0; } to { background-position: 0 0; } }
+  @keyframes reaction-pop { from { opacity: 1; transform: none; } to { opacity: 1; transform: none; } }
 }
 `;
 
@@ -364,6 +370,38 @@ function makeStyles(vw, vh) {
     padding: `${s(5)}px ${s(10)}px`, borderRadius: s(6), border: `1px solid rgba(201,169,97,0.08)`,
     background: "rgba(0,0,0,0.3)", transition: "all 0.3s",
     width: "100%", maxWidth: s(260),
+    position: "relative",  // anchor for the reaction bubble
+  },
+  // Portrait initials chip in the opponent strip header (spec §11.2, §11.5).
+  portraitChip: {
+    width: s(28), height: s(28),
+    borderRadius: "50%",
+    display: "inline-flex", alignItems: "center", justifyContent: "center",
+    fontWeight: "bold", fontSize: ts(11), letterSpacing: 0.5,
+    marginRight: s(8), flexShrink: 0,
+    boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.08)",
+    userSelect: "none",
+  },
+  oppHeaderLeft: { display: "flex", alignItems: "center", gap: 0 },
+  // Reaction bubble (spec §11.5, §11.3). Anchored above the opponent
+  // strip. Position/animation keeps it visible for ~3s (state manages the
+  // lifecycle); a small pop-in transition softens the appearance.
+  reactionBubble: {
+    position: "absolute",
+    top: `-${s(14)}px`,
+    right: s(10),
+    background: `linear-gradient(135deg, ${gold}, #a8873d)`,
+    color: bg,
+    padding: `${s(4)}px ${s(10)}px`,
+    borderRadius: s(10),
+    fontSize: ts(11), fontWeight: "bold", letterSpacing: 0.3,
+    boxShadow: "0 4px 12px rgba(0,0,0,0.35)",
+    whiteSpace: "nowrap",
+    animation: "reaction-pop 220ms cubic-bezier(0.34, 1.56, 0.64, 1) both",
+    zIndex: 5,
+    pointerEvents: "none",
+    maxWidth: s(180),
+    overflow: "hidden", textOverflow: "ellipsis",
   },
   oppStripActive: {
     background: "rgba(201,169,97,0.08)", borderColor: "rgba(201,169,97,0.25)",

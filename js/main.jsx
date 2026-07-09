@@ -85,6 +85,22 @@ function MahjongGame() {
   const animGenRef = useRef(0);
   const tileRefsRef = useRef(new Map());
   const animTimersRef = useRef(new Map());
+  // §11.3 AI reactions. aiReactionsState[seatIdx] = { kind, line, gen }
+  // when active; deleted when the reaction expires. Follows the same
+  // latest-wins timer discipline as tileAnimsState (§10.3).
+  const [aiReactionsState, setAiReactionsState] = useState({});
+  const reactionGenRef = useRef(0);
+  const reactionTimersRef = useRef(new Map());
+  const [reactionsEnabled, setReactionsEnabled] = useState(() => {
+    try { return localStorage.getItem("mahjong_ai_reactions") !== "false"; }
+    catch { return true; }
+  });
+  // Round-end reaction bookkeeping — set when we've already fired
+  // reactions for a round's result, so we don't refire on subsequent
+  // renders. Cleared by the round-transition effect.
+  const roundReactionsFiredRef = useRef({ round: -1 });
+  // Snapshot of prior scores for bankrupt / comeback detection.
+  const prevScoresRef = useRef(null);
   // §10.7 — respect prefers-reduced-motion. Detected once at mount and
   // whenever the media query changes. When true, pushAnim is a no-op.
   const [reducedMotion, setReducedMotion] = useState(() => {
@@ -205,6 +221,34 @@ function MahjongGame() {
     return {};
   }
 
+  // §11.3 — push an AI reaction on a seat. Same latest-wins/gen-stamped
+  // cleanup pattern as pushAnim. Skips if reactions are disabled by the
+  // menu toggle, if seatIdx is the human, or under reduced motion (the
+  // bubble's pop keyframe is a motion effect too).
+  const REACTION_TTL = 3000;
+  function pushReaction(seatIdx, kind) {
+    if (!reactionsEnabled) return;
+    if (reducedMotion) return;
+    if (seatIdx === PLAYER_IDX) return;
+    if (!REACTION_LINES[kind]) return;
+    const line = reactionLineFor(state.reactionSeeds || {}, seatIdx, kind, langRef.current);
+    if (!line) return;
+    const gen = ++reactionGenRef.current;
+    const prev = reactionTimersRef.current.get(seatIdx);
+    if (prev) clearTimeout(prev);
+    setAiReactionsState((cur) => ({ ...cur, [seatIdx]: { kind, line, gen } }));
+    const timer = setTimeout(() => {
+      setAiReactionsState((cur) => {
+        const entry = cur[seatIdx];
+        if (!entry || entry.gen !== gen) return cur;
+        const { [seatIdx]: _drop, ...rest } = cur;
+        return rest;
+      });
+      reactionTimersRef.current.delete(seatIdx);
+    }, REACTION_TTL);
+    reactionTimersRef.current.set(seatIdx, timer);
+  }
+
   // §10.6 — cleanup on unmount + round transition. Clearing the timers
   // map on round transition prevents stale animations from the just-
   // finished round from applying to the fresh round's tiles (which have
@@ -214,14 +258,26 @@ function MahjongGame() {
       animTimersRef.current.forEach((t) => clearTimeout(t));
       animTimersRef.current.clear();
       tileRefsRef.current.clear();
+      reactionTimersRef.current.forEach((t) => clearTimeout(t));
+      reactionTimersRef.current.clear();
     };
   }, []);
   useEffect(() => {
-    // Round transition — clear animation state and pending timers.
+    // Round transition — clear animation state and pending timers, plus
+    // any lingering reaction bubbles from the previous round.
     animTimersRef.current.forEach((t) => clearTimeout(t));
     animTimersRef.current.clear();
     setTileAnimsState({});
+    reactionTimersRef.current.forEach((t) => clearTimeout(t));
+    reactionTimersRef.current.clear();
+    setAiReactionsState({});
   }, [state.roundNumber]);
+
+  // Persist AI-reactions toggle (spec §11.5).
+  useEffect(() => {
+    try { localStorage.setItem("mahjong_ai_reactions", String(reactionsEnabled)); }
+    catch {}
+  }, [reactionsEnabled]);
 
   // Persist training-mode menu setting (spec §5.3). Scalar key, no
   // versioning — see §18 registry.
@@ -447,6 +503,75 @@ function MahjongGame() {
       return { ...prev, roundResults: [...prev.roundResults, result], persistRev: prev.persistRev + 1 };
     });
   }, [state.winner, state.isDraw, state.roundNumber]);
+
+  // §11.4 — AI reaction triggers. Fires once per round on the round's
+  // resolution and once on any AI going bankrupt. Idempotent under
+  // Strict Mode via a per-round dedup ref.
+  useEffect(() => {
+    if (state.winner === null && !state.isDraw) return;
+    if (roundReactionsFiredRef.current.round === state.roundNumber) return;
+    roundReactionsFiredRef.current.round = state.roundNumber;
+
+    // Hu wins → hu_win on winner, dealt_winner on discarder (dianpao),
+    // hu_lose on remaining non-winner AI seats.
+    if (state.winner !== null && state.winInfo) {
+      if (state.winner !== PLAYER_IDX) {
+        pushReaction(state.winner, "hu_win");
+      }
+      if (state.winInfo.type === "dianpao" && typeof state.winInfo.discarder === "number" && state.winInfo.discarder !== PLAYER_IDX && state.winInfo.discarder !== state.winner) {
+        pushReaction(state.winInfo.discarder, "dealt_winner");
+      }
+    }
+
+    // big_loss on any AI whose delta was worse than the threshold. Skip
+    // the discarder (already got dealt_winner) so we don't stack two
+    // bubbles on one seat.
+    if (state.scoreBreakdown) {
+      const deltas = state.scoreBreakdown.deltas;
+      const discarder = state.winInfo && state.winInfo.discarder;
+      for (let seat = 1; seat <= 3; seat++) {
+        if (seat === discarder) continue;
+        if (seat === state.winner) continue;
+        if (deltas[seat] <= REACTION_BIG_LOSS_THRESHOLD) {
+          pushReaction(seat, "big_loss");
+        }
+      }
+    }
+
+    // bankrupt — AI crossed from non-negative to negative this round.
+    // Uses prevScoresRef captured before this round's applyWin.
+    const prevScores = prevScoresRef.current;
+    if (prevScores) {
+      for (let seat = 1; seat <= 3; seat++) {
+        if (prevScores[seat] >= 0 && state.scores[seat] < 0) {
+          pushReaction(seat, "bankrupt");
+        }
+      }
+    }
+
+    // comeback — an AI who was tied-lowest in prevScores is now strictly
+    // leading in state.scores. Fires at most once per round even if
+    // multiple AIs qualify (pushReaction on each is fine — they animate
+    // in parallel on different seats).
+    if (prevScores) {
+      const prevMin = Math.min(...prevScores);
+      const nowMax = Math.max(...state.scores);
+      for (let seat = 1; seat <= 3; seat++) {
+        if (prevScores[seat] === prevMin && state.scores[seat] === nowMax && prevScores[seat] !== nowMax) {
+          pushReaction(seat, "comeback");
+        }
+      }
+    }
+  }, [state.winner, state.isDraw, state.roundNumber]);
+
+  // Track scores as they were BEFORE the current round's applyWin so
+  // the reaction effect above can detect prev→now transitions. Captured
+  // whenever a new round begins and left frozen through the round.
+  useEffect(() => {
+    if (state.winner === null && !state.isDraw) {
+      prevScoresRef.current = [...state.scores];
+    }
+  }, [state.roundNumber]);
 
   // AI auto-play
   useEffect(() => {
@@ -1297,18 +1422,34 @@ function MahjongGame() {
     const opp = state.players[pIdx];
     const isActive = state.currentTurn === pIdx;
     const pers = (state.personalities || [])[pIdx];
+    const reaction = aiReactionsState[pIdx];
+    const cols = portraitColors(pIdx);
+    const initials = initialsFor(SL[pIdx]);
     return (
       <div style={{ ...S.oppStrip, ...(isActive ? S.oppStripActive : {}) }}>
+        {reaction && (
+          <div style={S.reactionBubble} aria-live="polite" role="status">
+            {reaction.line}
+          </div>
+        )}
         <div style={S.oppHeader}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            <span style={{ ...S.oppName, ...(isActive ? S.oppNameActive : {}) }}>
-              {isActive && <span style={S.turnIndicator}>▶ </span>}
-              {SL[pIdx]}
+          <div style={S.oppHeaderLeft}>
+            <span
+              style={{ ...S.portraitChip, background: cols.bg, color: cols.fg }}
+              aria-hidden="true"
+            >
+              {initials}
             </span>
-            {posLabel && <span style={S.positionLabel}>{posLabel}</span>}
-            {pers && difficulty !== "easy" && (
-              <span style={S.personalityTag}>{personalityLabel(pers)}</span>
-            )}
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <span style={{ ...S.oppName, ...(isActive ? S.oppNameActive : {}) }}>
+                {isActive && <span style={S.turnIndicator}>▶ </span>}
+                {SL[pIdx]}
+              </span>
+              {posLabel && <span style={S.positionLabel}>{posLabel}</span>}
+              {pers && difficulty !== "easy" && (
+                <span style={S.personalityTag}>{personalityLabel(pers)}</span>
+              )}
+            </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
             <span style={{ ...S.scoreChip, ...(state.scores[pIdx] < 0 ? S.scoreChipBroke : {}) }}>{state.scores[pIdx]} {L.scoreLabel}</span>
@@ -1827,6 +1968,19 @@ function MahjongGame() {
                   {trainingMode ? "✓" : ""}
                 </span>
                 <span>{L.trainingModeLabel}</span>
+              </button>
+            </div>
+            <div style={S.menuToggleRow}>
+              <button
+                tabIndex={-1}
+                style={{ ...S.menuToggleBtn, ...(reactionsEnabled ? S.menuToggleBtnActive : {}) }}
+                onClick={() => setReactionsEnabled((v) => !v)}
+                aria-pressed={reactionsEnabled}
+              >
+                <span style={{ ...S.menuToggleBox, ...(reactionsEnabled ? S.menuToggleBoxActive : {}) }}>
+                  {reactionsEnabled ? "✓" : ""}
+                </span>
+                <span>{L.aiReactionsLabel}</span>
               </button>
             </div>
           </div>
