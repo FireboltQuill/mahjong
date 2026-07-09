@@ -122,9 +122,12 @@ function HairBack({ style, color }) {
     case "wavy-long":
       return (
         <g>
-          <path d="M24 42 L24 100 L76 100 L76 42 Q76 60 72 76 Q68 92 74 100 M26 42 Q30 60 26 76 Q22 92 28 100" fill={color}/>
           <rect x="26" y="42" width="48" height="58" fill={color}/>
           <ellipse cx="50" cy="40" rx="24" ry="16" fill={color}/>
+          <ellipse cx="22" cy="72" rx="5" ry="8" fill={color}/>
+          <ellipse cx="78" cy="72" rx="5" ry="8" fill={color}/>
+          <ellipse cx="20" cy="92" rx="5" ry="6" fill={color}/>
+          <ellipse cx="80" cy="92" rx="5" ry="6" fill={color}/>
         </g>
       );
     case "hime":
@@ -199,8 +202,9 @@ function HairBack({ style, color }) {
     case "high-ponytail":
       return (
         <g>
-          <ellipse cx="50" cy="40" rx="22" ry="15" fill={color}/>
-          <path d="M50 12 Q62 18 58 34 Q54 26 46 30 Q44 20 50 12 Z" fill={color}/>
+          <ellipse cx="50" cy="42" rx="22" ry="15" fill={color}/>
+          <ellipse cx="50" cy="20" rx="7" ry="9" fill={color}/>
+          <rect x="46" y="27" width="8" height="3" fill={color} opacity="0.55"/>
         </g>
       );
     case "asymmetric-bob":
@@ -298,8 +302,9 @@ function HairFront({ style, color }) {
     case "long-with-forelock":
       return (
         <g>
-          <path d="M28 44 Q42 34 60 42 L58 62 L44 60 Z" fill={color}/>
-          <path d="M62 44 Q70 40 72 46 L68 50 Q64 46 62 44 Z" fill={color}/>
+          <path d="M28 44 Q40 38 50 42 Q60 38 72 44 L70 52 Q50 46 30 52 Z" fill={color}/>
+          <path d="M32 50 Q28 60 34 66 Q37 62 36 50 Z" fill={color}/>
+          <path d="M68 50 Q72 60 66 66 Q63 62 64 50 Z" fill={color}/>
         </g>
       );
     default:
