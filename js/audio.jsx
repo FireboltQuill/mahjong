@@ -7,6 +7,10 @@ const AUDIO_VERSION = 1;
 const AUDIO_LAST_ANNOUNCED_KEY = "mahjong_last_announced";
 const AUDIO_LAST_ANNOUNCED_VERSION = 1;
 const AUDIO_ASSET_PATH = "audio/";
+// Placeholder assets ship as .m4a (AAC in MP4 container) since afconvert
+// on macOS can't encode mp3 without external tools. Swap to .mp3 (or add a
+// fallback list) if you replace the placeholders with mp3 assets.
+const AUDIO_ASSET_EXT = ".m4a";
 
 // Spec §12.2 asset list.
 const AUDIO_SFX_NAMES = [
@@ -71,14 +75,14 @@ function initAudioAfterGesture() {
   const s = audioState.settings;
   for (const name of AUDIO_SFX_NAMES) {
     try {
-      const el = new Audio(`${AUDIO_ASSET_PATH}${name}.mp3`);
+      const el = new Audio(`${AUDIO_ASSET_PATH}${name}${AUDIO_ASSET_EXT}`);
       el.preload = "auto";
       el.volume = s.sfxVolume;
       el.addEventListener("error", () => {
         if (!audioState.warned.has(name)) {
           audioState.warned.add(name);
           // Single warning per missing asset per session.
-          console.warn(`[audio] missing asset: ${name}.mp3`);
+          console.warn(`[audio] missing asset: ${name}${AUDIO_ASSET_EXT}`);
         }
       });
       audioState.sfxElements.set(name, el);
@@ -86,14 +90,14 @@ function initAudioAfterGesture() {
   }
 
   try {
-    const bgm = new Audio(`${AUDIO_ASSET_PATH}${AUDIO_MUSIC_NAME}.mp3`);
+    const bgm = new Audio(`${AUDIO_ASSET_PATH}${AUDIO_MUSIC_NAME}${AUDIO_ASSET_EXT}`);
     bgm.preload = "auto";
     bgm.loop = true;
     bgm.volume = s.musicVolume;
     bgm.addEventListener("error", () => {
       if (!audioState.warned.has(AUDIO_MUSIC_NAME)) {
         audioState.warned.add(AUDIO_MUSIC_NAME);
-        console.warn(`[audio] missing asset: ${AUDIO_MUSIC_NAME}.mp3`);
+        console.warn(`[audio] missing asset: ${AUDIO_MUSIC_NAME}${AUDIO_ASSET_EXT}`);
       }
     });
     audioState.musicElement = bgm;
