@@ -1423,8 +1423,7 @@ function MahjongGame() {
     const isActive = state.currentTurn === pIdx;
     const pers = (state.personalities || [])[pIdx];
     const reaction = aiReactionsState[pIdx];
-    const cols = portraitColors(pIdx);
-    const initials = initialsFor(SL[pIdx]);
+    const preset = getPortrait(pIdx, SL[pIdx]);
     return (
       <div style={{ ...S.oppStrip, ...(isActive ? S.oppStripActive : {}) }}>
         {reaction && (
@@ -1434,11 +1433,8 @@ function MahjongGame() {
         )}
         <div style={S.oppHeader}>
           <div style={S.oppHeaderLeft}>
-            <span
-              style={{ ...S.portraitChip, background: cols.bg, color: cols.fg }}
-              aria-hidden="true"
-            >
-              {initials}
+            <span style={S.portraitChip} aria-hidden="true">
+              <PortraitSvg preset={preset} size={32}/>
             </span>
             <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
               <span style={{ ...S.oppName, ...(isActive ? S.oppNameActive : {}) }}>

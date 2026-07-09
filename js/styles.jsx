@@ -372,15 +372,18 @@ function makeStyles(vw, vh) {
     width: "100%", maxWidth: s(260),
     position: "relative",  // anchor for the reaction bubble
   },
-  // Portrait initials chip in the opponent strip header (spec §11.2, §11.5).
+  // Portrait chip in the opponent strip header (spec §11.2, §11.5).
+  // Container is a circle with overflow: hidden; the inline SVG inside
+  // fills to a 32px square and gets clipped to a circle by the container.
   portraitChip: {
-    width: s(28), height: s(28),
+    width: s(32), height: s(32),
     borderRadius: "50%",
+    overflow: "hidden",
     display: "inline-flex", alignItems: "center", justifyContent: "center",
-    fontWeight: "bold", fontSize: ts(11), letterSpacing: 0.5,
     marginRight: s(8), flexShrink: 0,
-    boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.08)",
+    boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.35), 0 1px 3px rgba(0,0,0,0.4)",
     userSelect: "none",
+    background: "rgba(0,0,0,0.3)",
   },
   oppHeaderLeft: { display: "flex", alignItems: "center", gap: 0 },
   // Reaction bubble (spec §11.5, §11.3). Anchored above the opponent
