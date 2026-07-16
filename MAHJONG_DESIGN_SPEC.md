@@ -1420,6 +1420,8 @@ Suggested assets:
 
 Use CC0 or generated assets.
 
+**Current shipped placeholders use `.m4a` (AAC in MP4 container).** The initial batch was generated with macOS `afconvert`, which can decode but not encode MP3. Any modern browser plays `.m4a` from `<audio>` natively, so the format swap is invisible at runtime. When replacing with real CC0 MP3s, either rename them to `.m4a` or flip the `AUDIO_ASSET_EXT` constant in `js/audio.jsx` back to `.mp3`.
+
 Size target:
 
 - SFX only: around 200–400KB.

@@ -604,6 +604,38 @@ function makeStyles(vw, vh) {
     textAlign: "center", lineHeight: `${s(12)}px`, fontSize: ts(11), color: gold,
   },
   menuToggleBoxActive: { background: gold, color: bg, borderColor: gold },
+  // ---- Audio settings (spec §12.7) ----
+  audioSectionHeader: {
+    color: gold, fontSize: ts(10), textTransform: "uppercase",
+    letterSpacing: 2, fontWeight: "bold",
+    borderBottom: `1px solid rgba(201,169,97,0.18)`,
+    paddingBottom: s(4), marginTop: s(14), marginBottom: s(8),
+  },
+  audioSliderRow: {
+    display: "flex", alignItems: "center", gap: s(10), marginBottom: s(6),
+  },
+  audioSliderLabel: {
+    color: green, fontSize: ts(12), width: s(96), flexShrink: 0,
+    letterSpacing: 0.4,
+  },
+  audioSlider: {
+    flex: 1, height: s(4), accentColor: gold, outline: "none", cursor: "pointer",
+  },
+  audioSliderValue: {
+    color: gold, fontSize: ts(11), width: s(32),
+    textAlign: "right", fontFamily: "monospace",
+  },
+  quickMuteBtn: {
+    background: "rgba(201,169,97,0.1)", border: `1px solid ${goldDim}`, color: gold,
+    width: s(36), height: s(36), borderRadius: s(6),
+    cursor: "pointer", outline: "none",
+    fontSize: ts(15), padding: 0,
+    display: "inline-flex", alignItems: "center", justifyContent: "center",
+  },
+  quickMuteBtnMuted: {
+    color: "#a06060", background: "rgba(120,60,60,0.08)",
+    borderColor: "rgba(180,80,80,0.35)",
+  },
   resumeNote: {
     color: greenDim, fontSize: ts(11), textAlign: "center",
     marginTop: s(4), letterSpacing: 0.5, fontStyle: "italic",

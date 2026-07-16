@@ -28,6 +28,9 @@ function MahjongGame() {
   // Daily challenge modal (spec §9.9).
   const [showDaily, setShowDaily] = useState(false);
   const [dailyData, setDailyData] = useState(() => loadDaily());
+  // Audio settings (spec §12). audioState is the source of truth in
+  // audio.jsx; this mirror in React state drives the sliders/mute UI.
+  const [audioSettings, setAudioSettings] = useState(() => loadAudioSettings());
   const [showAdmin, setShowAdmin] = useState(false);
   const [adminInput, setAdminInput] = useState(null);
   const [adminTab, setAdminTab] = useState("state"); // "state" | "names"
@@ -101,6 +104,14 @@ function MahjongGame() {
   const roundReactionsFiredRef = useRef({ round: -1 });
   // Snapshot of prior scores for bankrupt / comeback detection.
   const prevScoresRef = useRef(null);
+  // Resume-SFX gate (spec §12.6). prevResolutionRef tracks whether the
+  // round was resolved on the previous render so we detect the exact
+  // transition once. suppressNextResolutionSfxRef is flipped true when
+  // §12.6 Case B side-channel says the SFX already played before a
+  // crash/close — one-shot; consumed on the next transition.
+  const prevResolutionRef = useRef({ winner: null, isDraw: false, round: 0 });
+  const suppressNextResolutionSfxRef = useRef(false);
+  const audioResumeHandledRef = useRef(false);
   // §10.7 — respect prefers-reduced-motion. Detected once at mount and
   // whenever the media query changes. When true, pushAnim is a no-op.
   const [reducedMotion, setReducedMotion] = useState(() => {
@@ -171,6 +182,19 @@ function MahjongGame() {
     const batch = pendingAnimsRef.current;
     pendingAnimsRef.current = [];
     for (const { id, kind } of batch) pushAnim(id, kind);
+  });
+
+  // Same pattern for SFX. AI setState updaters push a name onto
+  // pendingSfxRef; the drain effect calls playSfx post-render so
+  // Strict Mode double-invocation of the updater doesn't double-fire
+  // audio. Human-side handlers call playSfx directly since they run
+  // outside any updater.
+  const pendingSfxRef = useRef([]);
+  useEffect(() => {
+    if (pendingSfxRef.current.length === 0) return;
+    const batch = pendingSfxRef.current;
+    pendingSfxRef.current = [];
+    for (const name of batch) playSfx(name);
   });
 
   // §10.3 — latest-wins collision policy. When a new animation starts for
@@ -278,6 +302,102 @@ function MahjongGame() {
     try { localStorage.setItem("mahjong_ai_reactions", String(reactionsEnabled)); }
     catch {}
   }, [reactionsEnabled]);
+
+  // Push audio settings into the audio module so slider drags and mute
+  // toggles apply immediately + persist. updateAudioSettings also
+  // saves to localStorage via saveAudioSettings.
+  useEffect(() => {
+    updateAudioSettings(audioSettings);
+  }, [audioSettings]);
+
+  // Spec §12.4 — unlock audio playback + preload assets on first user
+  // gesture. Browsers block autoplay until a real user interaction has
+  // been registered, so we listen document-wide and detach after the
+  // first click/touch.
+  useEffect(() => {
+    let done = false;
+    function handler() {
+      if (done) return;
+      done = true;
+      initAudioAfterGesture();
+      document.removeEventListener("click", handler, true);
+      document.removeEventListener("touchstart", handler, true);
+    }
+    document.addEventListener("click", handler, true);
+    document.addEventListener("touchstart", handler, true);
+    return () => {
+      document.removeEventListener("click", handler, true);
+      document.removeEventListener("touchstart", handler, true);
+    };
+  }, []);
+
+  // Spec §12.6.1 — resume-SFX gate. Mount effect runs once (twice under
+  // Strict Mode but idempotent). Case A: prime prevResolutionRef with
+  // the restored resolution state so the transition-detection effect
+  // below sees no null→resolved transition. Case B: read + clear the
+  // mahjong_last_announced side-channel; if it matches the current
+  // game+round, set suppressNextResolutionSfx = true so if a transition
+  // does fire it'll be swallowed once.
+  useEffect(() => {
+    if (audioResumeHandledRef.current) return;
+    audioResumeHandledRef.current = true;
+    // Case A
+    prevResolutionRef.current = {
+      winner: state.winner,
+      isDraw: state.isDraw,
+      round: state.roundNumber,
+    };
+    // Case B
+    const announced = readAndClearResolutionAnnounced();
+    if (
+      announced &&
+      state.gameId &&
+      announced.gameId === state.gameId &&
+      announced.roundNumber === state.roundNumber
+    ) {
+      suppressNextResolutionSfxRef.current = true;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // §12.5 — round-resolution SFX transition. Fires exactly once per
+  // round on the null→resolved edge; uses the suppress flag from §12.6.
+  useEffect(() => {
+    const prev = prevResolutionRef.current;
+    const currResolved = state.winner !== null || state.isDraw;
+    const prevResolved = prev.winner !== null || prev.isDraw;
+    const roundChanged = prev.round !== state.roundNumber;
+
+    if (roundChanged && !currResolved) {
+      // New round starting — reset tracker without firing.
+      prevResolutionRef.current = {
+        winner: state.winner,
+        isDraw: state.isDraw,
+        round: state.roundNumber,
+      };
+      return;
+    }
+
+    if (!prevResolved && currResolved) {
+      if (!suppressNextResolutionSfxRef.current) {
+        let sfxName;
+        if (state.isDraw) sfxName = "round_over";
+        else if (state.winner === PLAYER_IDX) sfxName = "hu_win";
+        else if (state.winInfo && state.winInfo.discarder === PLAYER_IDX) sfxName = "dianpao";
+        else sfxName = "hu_lose";
+        playSfx(sfxName);
+        if (state.gameId) {
+          markResolutionAnnounced(state.gameId, state.roundNumber);
+        }
+      }
+      suppressNextResolutionSfxRef.current = false;
+      prevResolutionRef.current = {
+        winner: state.winner,
+        isDraw: state.isDraw,
+        round: state.roundNumber,
+      };
+    }
+  }, [state.winner, state.isDraw, state.roundNumber, state.winInfo, state.gameId]);
 
   // Persist training-mode menu setting (spec §5.3). Scalar key, no
   // versioning — see §18 registry.
@@ -612,6 +732,7 @@ function MahjongGame() {
       }
       const tile = st.wall[0];
       pendingAnimsRef.current.push({ id: tile.id, kind: "draw" });
+      pendingSfxRef.current.push("draw");
       const newWall = st.wall.slice(1);
       const newHand = sortHand([...player.hand, tile]);
       const newPlayers = st.players.map((pl, i) => (i === p ? { ...pl, hand: newHand } : pl));
@@ -623,6 +744,7 @@ function MahjongGame() {
       if (cGangs.length > 0) {
         const gang = cGangs[0];
         for (const t of gang.tiles) pendingAnimsRef.current.push({ id: t.id, kind: "claim-pop" });
+        pendingSfxRef.current.push("gang");
         const afterHand = newHand.filter((t) => !gang.tiles.some((g) => g.id === t.id));
         const newMelds = [...player.openMelds, { ...gang, claimed: false }];
 
@@ -654,6 +776,7 @@ function MahjongGame() {
         const pg = pGangs[0];
         for (const t of playerAfterCGang.openMelds[pg.meldIdx].tiles) pendingAnimsRef.current.push({ id: t.id, kind: "claim-pop" });
         pendingAnimsRef.current.push({ id: pg.tile.id, kind: "claim-pop" });
+        pendingSfxRef.current.push("gang");
         const promotedMeld = { ...playerAfterCGang.openMelds[pg.meldIdx], type: "gang", tiles: [...playerAfterCGang.openMelds[pg.meldIdx].tiles, pg.tile] };
         const newMelds = playerAfterCGang.openMelds.map((m, i) => i === pg.meldIdx ? promotedMeld : m);
         const handMinusTile = playerAfterCGang.hand.filter((t) => t.id !== pg.tile.id);
@@ -692,6 +815,7 @@ function MahjongGame() {
       const discardIdx = aiChooseDiscard(player.hand, player.openMelds, st.players, diffRef.current, (st.personalities || [])[p] || "generic", st.wall.length, p);
       const discarded = player.hand[discardIdx];
       pendingAnimsRef.current.push({ id: discarded.id, kind: "discard" });
+      pendingSfxRef.current.push("discard");
       const newHand = player.hand.filter((_, i) => i !== discardIdx);
       const newPlayers = st.players.map((pl, i) =>
         i === p ? { ...pl, hand: newHand, discards: [...pl.discards, discarded] } : pl
@@ -829,6 +953,9 @@ function MahjongGame() {
     // Claim-pop on every tile that lands in the new open meld — the
     // 2-3 tiles from hand plus the discarded tile itself.
     for (const t of opt.tiles) pendingAnimsRef.current.push({ id: t.id, kind: "claim-pop" });
+    if (claim.type === "chi") pendingSfxRef.current.push("chi");
+    else if (claim.type === "peng") pendingSfxRef.current.push("peng");
+    else if (claim.type === "gang") pendingSfxRef.current.push("gang");
     const newHand = player.hand.filter((t) => !opt.fromHand.some((f) => f.id === t.id));
     const meld = { type: opt.type, tiles: opt.tiles, claimed: true };
     const newMelds = [...player.openMelds, meld];
@@ -897,6 +1024,7 @@ function MahjongGame() {
     const peek = state.wall[0];
     if (state.currentTurn === PLAYER_IDX && state.phase === "draw" && peek) {
       pushAnim(peek.id, "draw");
+      playSfx("draw");
     }
     setState((prev) => {
       if (prev.currentTurn !== PLAYER_IDX || prev.phase !== "draw") return prev;
@@ -933,7 +1061,10 @@ function MahjongGame() {
     const player0 = state.players[PLAYER_IDX];
     if (state.currentTurn === PLAYER_IDX && state.phase === "discard" && state.turnDrawn) {
       const t = player0.hand[tileIdx];
-      if (t) pushAnim(t.id, "discard");
+      if (t) {
+        pushAnim(t.id, "discard");
+        playSfx("discard");
+      }
     }
     setState((prev) => {
       if (prev.currentTurn !== PLAYER_IDX || prev.phase !== "discard" || !prev.turnDrawn) return prev;
@@ -979,6 +1110,7 @@ function MahjongGame() {
     for (const t of tiles) pendingAnimsRef.current.push({ id: t.id, kind: "claim-pop" });
     const rep = state.wall[0];
     if (rep) pendingAnimsRef.current.push({ id: rep.id, kind: "draw" });
+    playSfx("gang");
     setState((prev) => {
       if (prev.currentTurn !== PLAYER_IDX || prev.phase !== "discard") return prev;
       const player = prev.players[PLAYER_IDX];
@@ -1020,6 +1152,7 @@ function MahjongGame() {
     pendingAnimsRef.current.push({ id: tile.id, kind: "claim-pop" });
     const rep = state.wall[0];
     if (rep) pendingAnimsRef.current.push({ id: rep.id, kind: "draw" });
+    playSfx("gang");
     setState((prev) => {
       if (prev.currentTurn !== PLAYER_IDX || prev.phase !== "discard" || !prev.turnDrawn) return prev;
       const player = prev.players[PLAYER_IDX];
@@ -1080,6 +1213,11 @@ function MahjongGame() {
       if (opt && opt.tiles) {
         for (const t of opt.tiles) pendingAnimsRef.current.push({ id: t.id, kind: "claim-pop" });
       }
+      // Claim-type-specific SFX (§12.5). Hu doesn't fire here — the
+      // resolution-transition effect handles hu_win/dianpao/hu_lose.
+      if (claim.type === "chi") playSfx("chi");
+      else if (claim.type === "peng") playSfx("peng");
+      else if (claim.type === "gang") playSfx("gang");
     }
     setState((prev) => {
       if (!prev.awaitingPlayerClaim) return prev;
@@ -1107,9 +1245,13 @@ function MahjongGame() {
   function startNewGame() {
     // Spec §6.8 — Start Game from any menu path discards the prior save.
     removeStorageKey("mahjong_in_progress");
+    removeStorageKey("mahjong_last_announced");
     setHasResumeSave(false);
     setHintIdx(null);
     resumeClearedRef.current = false;
+    // Reset resolution SFX tracking for the new game.
+    prevResolutionRef.current = { winner: null, isDraw: false, round: 1 };
+    suppressNextResolutionSfxRef.current = false;
     setState(createInitialState(windRoundsSetting, langRef.current));
     setShowMenu(false);
     setSelectedTileIdx(null);
@@ -1357,9 +1499,12 @@ function MahjongGame() {
   function startWithAdmin() {
     // Same clear-prior-save semantics as startNewGame (§6.8).
     removeStorageKey("mahjong_in_progress");
+    removeStorageKey("mahjong_last_announced");
     setHasResumeSave(false);
     setHintIdx(null);
     resumeClearedRef.current = false;
+    prevResolutionRef.current = { winner: null, isDraw: false, round: 1 };
+    suppressNextResolutionSfxRef.current = false;
     const initialState = createInitialState(windRoundsSetting, langRef.current);
     setState(initialState);
     setShowMenu(false);
@@ -1979,6 +2124,57 @@ function MahjongGame() {
                 <span>{L.aiReactionsLabel}</span>
               </button>
             </div>
+            <div style={S.audioSectionHeader}>{L.audioSectionLabel}</div>
+            <div style={S.audioSliderRow}>
+              <span style={S.audioSliderLabel}>{L.sfxVolumeLabel}</span>
+              <input
+                type="range"
+                min="0" max="1" step="0.05"
+                value={audioSettings.sfxVolume}
+                onChange={(e) => setAudioSettings((s) => ({ ...s, sfxVolume: parseFloat(e.target.value) }))}
+                style={S.audioSlider}
+                aria-label={L.sfxVolumeLabel}
+              />
+              <span style={S.audioSliderValue}>{Math.round(audioSettings.sfxVolume * 100)}</span>
+            </div>
+            <div style={S.audioSliderRow}>
+              <span style={S.audioSliderLabel}>{L.musicVolumeLabel}</span>
+              <input
+                type="range"
+                min="0" max="1" step="0.05"
+                value={audioSettings.musicVolume}
+                onChange={(e) => setAudioSettings((s) => ({ ...s, musicVolume: parseFloat(e.target.value) }))}
+                style={S.audioSlider}
+                aria-label={L.musicVolumeLabel}
+              />
+              <span style={S.audioSliderValue}>{Math.round(audioSettings.musicVolume * 100)}</span>
+            </div>
+            <div style={S.menuToggleRow}>
+              <button
+                tabIndex={-1}
+                style={{ ...S.menuToggleBtn, ...(audioSettings.sfxMuted ? S.menuToggleBtnActive : {}) }}
+                onClick={() => setAudioSettings((s) => ({ ...s, sfxMuted: !s.sfxMuted }))}
+                aria-pressed={audioSettings.sfxMuted}
+              >
+                <span style={{ ...S.menuToggleBox, ...(audioSettings.sfxMuted ? S.menuToggleBoxActive : {}) }}>
+                  {audioSettings.sfxMuted ? "✓" : ""}
+                </span>
+                <span>{L.sfxMuteLabel}</span>
+              </button>
+            </div>
+            <div style={S.menuToggleRow}>
+              <button
+                tabIndex={-1}
+                style={{ ...S.menuToggleBtn, ...(audioSettings.musicMuted ? S.menuToggleBtnActive : {}) }}
+                onClick={() => setAudioSettings((s) => ({ ...s, musicMuted: !s.musicMuted }))}
+                aria-pressed={audioSettings.musicMuted}
+              >
+                <span style={{ ...S.menuToggleBox, ...(audioSettings.musicMuted ? S.menuToggleBoxActive : {}) }}>
+                  {audioSettings.musicMuted ? "✓" : ""}
+                </span>
+                <span>{L.musicMuteLabel}</span>
+              </button>
+            </div>
           </div>
           <div style={S.setupModalFooter}>
             <button tabIndex={-1} style={S.setupDoneBtn} onClick={() => setShowSetup(false)}>
@@ -2175,6 +2371,16 @@ function MahjongGame() {
           {isPlayerTurn && canDraw && <span style={S.statusTextYou}>{L.turnDraw}</span>}
           {isPlayerTurn && canDiscard && <span style={S.statusTextYou}>{L.turnDiscard}</span>}
           <button tabIndex={-1} style={S.langBtn} onClick={() => setLang(lang === "en" ? "zh" : "en")}>{L.langToggle}</button>
+          <button
+            tabIndex={-1}
+            style={{ ...S.quickMuteBtn, ...(audioSettings.sfxMuted ? S.quickMuteBtnMuted : {}) }}
+            onClick={() => setAudioSettings((s) => ({ ...s, sfxMuted: !s.sfxMuted }))}
+            title={L.quickMuteLabel}
+            aria-label={L.quickMuteLabel}
+            aria-pressed={audioSettings.sfxMuted}
+          >
+            {audioSettings.sfxMuted ? "🔇" : "🔊"}
+          </button>
           {!state.dailyGame && (
             <button tabIndex={-1} style={S.menuBtn} onClick={() => openAdmin()}>{L.adminBtn}</button>
           )}
