@@ -103,6 +103,11 @@ function initRound(gameInfo, lang = "en", roundSeed) {
     scoreBreakdown: null,
     isDraw: false,
     log: [ll.logRoundBegin(gameInfo.roundNumber, ll.seats[gameInfo.dealer])],
+    // Phase 9a §13.5 — machine-readable action log, one entry per
+    // action-emitting handler. Reset per round; nextRound spreads
+    // prev into gameInfo but this explicit field overwrites it, so
+    // each round starts with an empty log.
+    actionLog: [],
     pendingClaims: null,
     selectedTile: null,
     awaitingPlayerClaim: null,
