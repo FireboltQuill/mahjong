@@ -715,7 +715,7 @@ function MahjongGame() {
   function processAIAction(st) {
     if (st.winner !== null || st.isDraw) return st;
 
-    // If we're in claim resolution phase
+    // Claim resolution phase — already writes actionLog via resolveClaims.
     if (st.phase === "claim") {
       return resolveClaims(st);
     }
@@ -725,51 +725,62 @@ function MahjongGame() {
 
     const player = st.players[p];
 
-    // Draw phase
+    // Draw phase. Multiple actions may chain in one call (draw →
+    // optional concealed gang → optional promoted gang → optional
+    // zimo). Each successful transition appends to the running
+    // actionLog; wall-exhaustion mid-chain returns a terminal draw
+    // state without a log entry (nothing happened).
     if (st.phase === "draw") {
       if (st.wall.length === 0) {
         return { ...st, isDraw: true, log: [...st.log, _L().logExhaust] };
       }
-      const tile = st.wall[0];
-      pendingAnimsRef.current.push({ id: tile.id, kind: "draw" });
+      const drawnTile = st.wall[0];
+      pendingAnimsRef.current.push({ id: drawnTile.id, kind: "draw" });
       pendingSfxRef.current.push("draw");
-      const newWall = st.wall.slice(1);
-      const newHand = sortHand([...player.hand, tile]);
-      const newPlayers = st.players.map((pl, i) => (i === p ? { ...pl, hand: newHand } : pl));
-      let newSt = { ...st, players: newPlayers, wall: newWall, phase: "discard", turnDrawn: true, lastDrawn: tile };
-      let winTile = tile;
+      // Note: the human-readable draw-log line is appended at the END
+      // if no gang/zimo chain triggers (matches original ordering).
+      // The actionLog "draw" entry lands immediately regardless.
+      let newSt = {
+        ...stepDraw(st, p),
+        actionLog: [...st.actionLog, { type: "draw", seat: p, expectedTileId: drawnTile.id }],
+      };
+      let winTile = drawnTile;
 
-      // Check for concealed gang
-      const cGangs = findConcealedGangs(newHand);
+      // Concealed gang triggered by the just-drawn tile.
+      const cGangs = findConcealedGangs(newSt.players[p].hand);
       if (cGangs.length > 0) {
         const gang = cGangs[0];
         for (const t of gang.tiles) pendingAnimsRef.current.push({ id: t.id, kind: "claim-pop" });
         pendingSfxRef.current.push("gang");
-        const afterHand = newHand.filter((t) => !gang.tiles.some((g) => g.id === t.id));
-        const newMelds = [...player.openMelds, { ...gang, claimed: false }];
-
         if (newSt.wall.length === 0) {
           return { ...newSt, isDraw: true, log: [...newSt.log, _L().logExhaust] };
         }
-        const replacementTile = newSt.wall[0];
-        pendingAnimsRef.current.push({ id: replacementTile.id, kind: "draw" });
-        const afterWall = newSt.wall.slice(1);
-        const afterHandWithReplacement = sortHand([...afterHand, replacementTile]);
-
-        newPlayers[p] = { ...newPlayers[p], hand: afterHandWithReplacement, openMelds: newMelds };
+        const replacement = newSt.wall[0];
+        pendingAnimsRef.current.push({ id: replacement.id, kind: "draw" });
+        const tileIds = gang.tiles.map((t) => t.id);
+        const stepped = stepDeclareGang(newSt, p, { source: "concealed", tileIds });
         newSt = {
-          ...newSt,
-          players: [...newPlayers],
-          wall: afterWall,
-          lastDrawn: replacementTile,
+          ...stepped,
+          actionLog: [...newSt.actionLog, {
+            type: "declare_gang",
+            seat: p,
+            tileKey: tileKey(gang.tiles[0]),
+            source: "concealed",
+            tileIds,
+            expectedReplacementTileId: replacement.id,
+          }],
           log: [...newSt.log, _L().logGangConc(_SL()[p], _TN(gang.tiles[0]))],
         };
-        winTile = replacementTile;
+        winTile = replacement;
       }
 
-      // Check for promoted gang (drew the 4th tile that matches an open
-      // peng). Auto-promotes; same shape as the concealed branch above.
-      // Only one promotion per draw — chains are an edge case.
+      // Promoted gang (drew the 4th tile matching an open peng).
+      // NOTE: spec §13.6 explicitly excludes promoted-gang from the
+      // action schema on the grounds that the codebase doesn't
+      // implement it — but it does. Until the spec is updated, we
+      // preserve the state transition inline and skip the actionLog
+      // append, which means Phase 9b replay won't reproduce this
+      // branch. Flagged as a followup.
       const playerAfterCGang = newSt.players[p];
       const pGangs = findPromotedGangs(playerAfterCGang);
       if (pGangs.length > 0) {
@@ -777,22 +788,22 @@ function MahjongGame() {
         for (const t of playerAfterCGang.openMelds[pg.meldIdx].tiles) pendingAnimsRef.current.push({ id: t.id, kind: "claim-pop" });
         pendingAnimsRef.current.push({ id: pg.tile.id, kind: "claim-pop" });
         pendingSfxRef.current.push("gang");
-        const promotedMeld = { ...playerAfterCGang.openMelds[pg.meldIdx], type: "gang", tiles: [...playerAfterCGang.openMelds[pg.meldIdx].tiles, pg.tile] };
-        const newMelds = playerAfterCGang.openMelds.map((m, i) => i === pg.meldIdx ? promotedMeld : m);
-        const handMinusTile = playerAfterCGang.hand.filter((t) => t.id !== pg.tile.id);
-
         if (newSt.wall.length === 0) {
           return { ...newSt, isDraw: true, log: [...newSt.log, _L().logExhaust] };
         }
         const replacementTile = newSt.wall[0];
         pendingAnimsRef.current.push({ id: replacementTile.id, kind: "draw" });
+        const promotedMeld = { ...playerAfterCGang.openMelds[pg.meldIdx], type: "gang", tiles: [...playerAfterCGang.openMelds[pg.meldIdx].tiles, pg.tile] };
+        const newMelds = playerAfterCGang.openMelds.map((m, i) => i === pg.meldIdx ? promotedMeld : m);
+        const handMinusTile = playerAfterCGang.hand.filter((t) => t.id !== pg.tile.id);
         const afterWall = newSt.wall.slice(1);
         const handAfterReplacement = sortHand([...handMinusTile, replacementTile]);
-
-        newPlayers[p] = { ...newPlayers[p], hand: handAfterReplacement, openMelds: newMelds };
+        const newPlayers = newSt.players.map((pl, i) =>
+          i === p ? { ...pl, hand: handAfterReplacement, openMelds: newMelds } : pl
+        );
         newSt = {
           ...newSt,
-          players: [...newPlayers],
+          players: newPlayers,
           wall: afterWall,
           lastDrawn: replacementTile,
           log: [...newSt.log, _L().logPromotedGang(_SL()[p], _TN(pg.tile))],
@@ -800,39 +811,41 @@ function MahjongGame() {
         winTile = replacementTile;
       }
 
-      // Check self-draw win
-      const checkPlayer = newSt.players[p];
-      if (validateHu(checkPlayer)) {
-        const won = applyWin(newSt, p, winTile, "zimo", null);
-        return { ...won, log: [...won.log, _L().logZimo(_SL()[p], _TN(winTile))] };
+      // Zimo check on the (possibly gang-augmented) hand.
+      if (validateHu(newSt.players[p])) {
+        const stepped = stepDeclareHu(newSt, p, { winningTileId: winTile.id, discarder: null });
+        return {
+          ...stepped,
+          actionLog: [...newSt.actionLog, {
+            type: "declare_hu",
+            seat: p,
+            winningTileId: winTile.id,
+            discarder: null,
+            expectedWinType: stepped.winInfo.type,
+            expectedLargeHu: stepped.winInfo.largeHu,
+            expectedSevenPairs: stepped.winInfo.sevenPairs,
+          }],
+          log: [...newSt.log, _L().logZimo(_SL()[p], _TN(winTile))],
+        };
       }
 
+      // No zimo — append the "AI drew" log line last so the ordering
+      // matches the pre-refactor behavior.
       return { ...newSt, log: [...newSt.log, _L().logDraw(_SL()[p])] };
     }
 
-    // Discard phase
+    // Discard phase.
     if (st.phase === "discard" && st.turnDrawn) {
       const discardIdx = aiChooseDiscard(player.hand, player.openMelds, st.players, diffRef.current, (st.personalities || [])[p] || "generic", st.wall.length, p);
       const discarded = player.hand[discardIdx];
       pendingAnimsRef.current.push({ id: discarded.id, kind: "discard" });
       pendingSfxRef.current.push("discard");
-      const newHand = player.hand.filter((_, i) => i !== discardIdx);
-      const newPlayers = st.players.map((pl, i) =>
-        i === p ? { ...pl, hand: newHand, discards: [...pl.discards, discarded] } : pl
-      );
-
-      let newSt = {
-        ...st,
-        players: newPlayers,
-        lastDiscard: discarded,
-        lastDiscarder: p,
-        phase: "claim",
-        turnDrawn: false,
-        playerDeclinedClaims: [],
+      const stepped = stepDiscard(st, p, discarded.id);
+      return {
+        ...stepped,
+        actionLog: [...st.actionLog, { type: "discard", seat: p, tileId: discarded.id }],
         log: [...st.log, _L().logDiscard(_SL()[p], _TN(discarded))],
       };
-
-      return newSt;
     }
 
     return st;
@@ -841,7 +854,9 @@ function MahjongGame() {
   function resolveClaims(st) {
     const disc = st.lastDiscard;
     const discarder = st.lastDiscarder;
-    if (!disc) return advanceTurn(st);
+    // Defensive: no discard means nothing to resolve. Advance without
+    // emitting resolve_pass (there was no claim window to pass on).
+    if (!disc) return stepResolvePass(st);
 
     // Track which claim types the player has already declined for this discard
     const declined = st.playerDeclinedClaims || [];
@@ -927,26 +942,39 @@ function MahjongGame() {
       return executeClaim(st, bestClaim);
     }
 
-    return advanceTurn(st);
+    // Nobody claimed the discard — emit resolve_pass and advance turn.
+    const passed = stepResolvePass(st);
+    return { ...passed, actionLog: [...st.actionLog, { type: "resolve_pass" }] };
   }
 
+  // Called from handlePlayerClaim (human accept branch) and resolveClaims
+  // (AI decisions). Emits the corresponding action-log entry per §13.6:
+  //   hu     → declare_hu (dianpao)
+  //   gang   → declare_gang (source: "discard")
+  //   chi/peng → claim
+  // The caller merges persistRev; we return the state with the action
+  // append + human log already applied.
   function executeClaim(st, claim) {
     const p = claim.playerIdx;
-    const player = st.players[p];
     const disc = st.lastDiscard;
+    const discarder = st.lastDiscarder;
 
     if (claim.type === "hu") {
-      const newHand = [...player.hand, disc];
-      const newPlayers = st.players.map((pl, i) => (i === p ? { ...pl, hand: sortHand(newHand) } : pl));
-      // Remove from discarder's discard pool
-      const discarder = st.lastDiscarder;
-      newPlayers[discarder] = {
-        ...newPlayers[discarder],
-        discards: newPlayers[discarder].discards.filter((t) => t.id !== disc.id),
+      const stepped = stepDeclareHu(st, p, { winningTileId: disc.id, discarder });
+      const action = {
+        type: "declare_hu",
+        seat: p,
+        winningTileId: disc.id,
+        discarder,
+        expectedWinType: stepped.winInfo.type,
+        expectedLargeHu: stepped.winInfo.largeHu,
+        expectedSevenPairs: stepped.winInfo.sevenPairs,
       };
-      const afterClaim = { ...st, players: newPlayers, awaitingPlayerClaim: null };
-      const won = applyWin(afterClaim, p, disc, "dianpao", discarder);
-      return { ...won, log: [...won.log, _L().logDianpao(_SL()[p], _TN(disc))] };
+      return {
+        ...stepped,
+        actionLog: [...st.actionLog, action],
+        log: [...stepped.log, _L().logDianpao(_SL()[p], _TN(disc))],
+      };
     }
 
     const opt = claim.option;
@@ -956,63 +984,80 @@ function MahjongGame() {
     if (claim.type === "chi") pendingSfxRef.current.push("chi");
     else if (claim.type === "peng") pendingSfxRef.current.push("peng");
     else if (claim.type === "gang") pendingSfxRef.current.push("gang");
-    const newHand = player.hand.filter((t) => !opt.fromHand.some((f) => f.id === t.id));
-    const meld = { type: opt.type, tiles: opt.tiles, claimed: true };
-    const newMelds = [...player.openMelds, meld];
 
-    // Remove disc from discarder's pool
-    const discarder = st.lastDiscarder;
-    const newPlayers = st.players.map((pl, i) => {
-      if (i === p) return { ...pl, hand: sortHand(newHand), openMelds: newMelds };
-      if (i === discarder) return { ...pl, discards: pl.discards.filter((t) => t.id !== disc.id) };
-      return pl;
+    if (claim.type === "gang") {
+      // Gang from discard needs a wall replacement — terminal draw if
+      // the wall is exhausted (no actionLog append for the aborted gang).
+      if (st.wall.length === 0) {
+        return { ...st, isDraw: true, log: [...st.log, _L().logExhaust] };
+      }
+      const replacement = st.wall[0];
+      pendingAnimsRef.current.push({ id: replacement.id, kind: "draw" });
+      const handTileIds = opt.fromHand.map((t) => t.id);
+      const tileIds = opt.tiles.map((t) => t.id);
+      const stepped = stepDeclareGang(st, p, {
+        source: "discard",
+        tileIds,
+        handTileIds,
+        claimedTileId: disc.id,
+        discarder,
+      });
+      const action = {
+        type: "declare_gang",
+        seat: p,
+        tileKey: tileKey(disc),
+        source: "discard",
+        tileIds,
+        handTileIds,
+        claimedTileId: disc.id,
+        discarder,
+        expectedReplacementTileId: replacement.id,
+      };
+      return {
+        ...stepped,
+        actionLog: [...st.actionLog, action],
+        log: [
+          ...st.log,
+          _L().logClaim(_SL()[p], _TN(disc), _L().actionLabel[claim.type] || claim.type),
+        ],
+      };
+    }
+
+    // chi or peng — pure claim, no wall draw.
+    const handTileIds = opt.fromHand.map((t) => t.id);
+    const resultingMeldTileIds = opt.tiles.map((t) => t.id);
+    const stepped = stepClaim(st, {
+      seat: p,
+      claimType: claim.type,
+      discarder,
+      claimedTileId: disc.id,
+      handTileIds,
+      resultingMeldTileIds,
     });
-
-    let newSt = {
-      ...st,
-      players: newPlayers,
-      currentTurn: p,
-      lastDiscard: null,
-      lastDiscarder: null,
-      awaitingPlayerClaim: null,
+    const action = {
+      type: "claim",
+      seat: p,
+      claimType: claim.type,
+      discarder,
+      claimedTileId: disc.id,
+      handTileIds,
+      resultingMeldTileIds,
+    };
+    return {
+      ...stepped,
+      actionLog: [...st.actionLog, action],
       log: [
         ...st.log,
         _L().logClaim(_SL()[p], _TN(disc), _L().actionLabel[claim.type] || claim.type),
       ],
     };
-
-    if (claim.type === "gang") {
-      // Draw replacement
-      if (newSt.wall.length === 0) {
-        return { ...newSt, isDraw: true, log: [...newSt.log, _L().logExhaust] };
-      }
-      const replacement = newSt.wall[0];
-      pendingAnimsRef.current.push({ id: replacement.id, kind: "draw" });
-      const afterWall = newSt.wall.slice(1);
-      const afterHand = sortHand([...newHand, replacement]);
-      newSt.players = newSt.players.map((pl, i) => (i === p ? { ...pl, hand: afterHand } : pl));
-      newSt.wall = afterWall;
-      newSt.phase = "discard";
-      newSt.turnDrawn = true;
-    } else {
-      newSt.phase = "discard";
-      newSt.turnDrawn = true;
-    }
-
-    return newSt;
   }
 
+  // Legacy alias — kept as a thin wrapper over stepResolvePass so any
+  // stale reference keeps working. Callers should prefer stepResolvePass
+  // directly and append the resolve_pass action separately.
   function advanceTurn(st) {
-    const next = (st.lastDiscarder + 1) % 4;
-    return {
-      ...st,
-      currentTurn: next,
-      phase: "draw",
-      lastDiscard: null,
-      lastDiscarder: null,
-      turnDrawn: false,
-      playerDeclinedClaims: [],
-    };
+    return stepResolvePass(st);
   }
 
   // Player actions
@@ -1028,29 +1073,22 @@ function MahjongGame() {
     }
     setState((prev) => {
       if (prev.currentTurn !== PLAYER_IDX || prev.phase !== "draw") return prev;
+      // Wall exhaustion is terminal, not an action — no actionLog append.
       if (prev.wall.length === 0) {
         return { ...prev, isDraw: true, log: [...prev.log, _L().logExhaust], persistRev: prev.persistRev + 1 };
       }
       const tile = prev.wall[0];
-      const newWall = prev.wall.slice(1);
-      const player = prev.players[PLAYER_IDX];
-      const newHand = sortHand([...player.hand, tile]);
-      const newPlayers = prev.players.map((pl, i) => (i === PLAYER_IDX ? { ...pl, hand: newHand } : pl));
+      const stepped = stepDraw(prev, PLAYER_IDX);
+      const action = { type: "draw", seat: PLAYER_IDX, expectedTileId: tile.id };
       let newSt = {
-        ...prev,
-        players: newPlayers,
-        wall: newWall,
-        phase: "discard",
-        turnDrawn: true,
-        lastDrawn: tile,
+        ...stepped,
+        actionLog: [...prev.actionLog, action],
         log: [...prev.log, _L().logYouDraw(_TN(tile))],
         persistRev: prev.persistRev + 1,
       };
-
       if (validateHu(newSt.players[PLAYER_IDX])) {
         newSt.log = [...newSt.log, _L().logCanHu];
       }
-
       return newSt;
     });
     setSelectedTileIdx(null);
@@ -1068,20 +1106,13 @@ function MahjongGame() {
     }
     setState((prev) => {
       if (prev.currentTurn !== PLAYER_IDX || prev.phase !== "discard" || !prev.turnDrawn) return prev;
-      const player = prev.players[PLAYER_IDX];
-      const discarded = player.hand[tileIdx];
-      const newHand = player.hand.filter((_, i) => i !== tileIdx);
-      const newPlayers = prev.players.map((pl, i) =>
-        i === PLAYER_IDX ? { ...pl, hand: newHand, discards: [...pl.discards, discarded] } : pl
-      );
+      const discarded = prev.players[PLAYER_IDX].hand[tileIdx];
+      if (!discarded) return prev;
+      const stepped = stepDiscard(prev, PLAYER_IDX, discarded.id);
+      const action = { type: "discard", seat: PLAYER_IDX, tileId: discarded.id };
       return {
-        ...prev,
-        players: newPlayers,
-        lastDiscard: discarded,
-        lastDiscarder: PLAYER_IDX,
-        phase: "claim",
-        turnDrawn: false,
-        playerDeclinedClaims: [],
+        ...stepped,
+        actionLog: [...prev.actionLog, action],
         log: [...prev.log, _L().logYouDiscard(_TN(discarded))],
         persistRev: prev.persistRev + 1,
       };
@@ -1093,14 +1124,29 @@ function MahjongGame() {
     setState((prev) => {
       if (prev.currentTurn !== PLAYER_IDX) return prev;
       const player = prev.players[PLAYER_IDX];
-      if (validateHu(player)) {
-        // The player can only zimo immediately after drawing, so lastDrawn is
-        // the winning tile. Fall back to the latest hand tile if unset.
-        const winTile = prev.lastDrawn || player.hand[player.hand.length - 1];
-        const won = applyWin(prev, PLAYER_IDX, winTile, "zimo", null);
-        return { ...won, log: [...won.log, _L().logYouHu], persistRev: prev.persistRev + 1 };
+      if (!validateHu(player)) {
+        return { ...prev, log: [...prev.log, _L().logBadHu], persistRev: prev.persistRev + 1 };
       }
-      return { ...prev, log: [...prev.log, _L().logBadHu], persistRev: prev.persistRev + 1 };
+      // Zimo — winning tile is lastDrawn (guaranteed set right after the
+      // draw that produced the winning shape), fall back to the last
+      // hand tile if unset.
+      const winTile = prev.lastDrawn || player.hand[player.hand.length - 1];
+      const stepped = stepDeclareHu(prev, PLAYER_IDX, { winningTileId: winTile.id, discarder: null });
+      const action = {
+        type: "declare_hu",
+        seat: PLAYER_IDX,
+        winningTileId: winTile.id,
+        discarder: null,
+        expectedWinType: stepped.winInfo.type,
+        expectedLargeHu: stepped.winInfo.largeHu,
+        expectedSevenPairs: stepped.winInfo.sevenPairs,
+      };
+      return {
+        ...stepped,
+        actionLog: [...prev.actionLog, action],
+        log: [...stepped.log, _L().logYouHu],
+        persistRev: prev.persistRev + 1,
+      };
     });
   }
 
@@ -1113,25 +1159,26 @@ function MahjongGame() {
     playSfx("gang");
     setState((prev) => {
       if (prev.currentTurn !== PLAYER_IDX || prev.phase !== "discard") return prev;
-      const player = prev.players[PLAYER_IDX];
-      const newHand = player.hand.filter((t) => !tiles.some((g) => g.id === t.id));
-      const meld = { type: "gang", tiles, claimed: false, concealed: true };
-      const newMelds = [...player.openMelds, meld];
-
       if (prev.wall.length === 0) {
         return { ...prev, isDraw: true, log: [...prev.log, _L().logExhaust], persistRev: prev.persistRev + 1 };
       }
       const replacement = prev.wall[0];
-      const afterWall = prev.wall.slice(1);
-      const afterHand = sortHand([...newHand, replacement]);
-      const newPlayers = prev.players.map((pl, i) =>
-        i === PLAYER_IDX ? { ...pl, hand: afterHand, openMelds: newMelds } : pl
-      );
+      const tileIds = tiles.map((t) => t.id);
+      const stepped = stepDeclareGang(prev, PLAYER_IDX, {
+        source: "concealed",
+        tileIds,
+      });
+      const action = {
+        type: "declare_gang",
+        seat: PLAYER_IDX,
+        tileKey: tileKey(tiles[0]),
+        source: "concealed",
+        tileIds,
+        expectedReplacementTileId: replacement.id,
+      };
       return {
-        ...prev,
-        players: newPlayers,
-        wall: afterWall,
-        lastDrawn: replacement,
+        ...stepped,
+        actionLog: [...prev.actionLog, action],
         log: [...prev.log, _L().logYouGang(_TN(tiles[0]))],
         persistRev: prev.persistRev + 1,
       };
@@ -1270,7 +1317,10 @@ function MahjongGame() {
     if (!save || !save.state) return;
     resumeClearedRef.current = false;
     setHintIdx(null);
-    setState(save.state);
+    // Backfill actionLog for saves from before Phase 9a. New saves
+    // always include the field; older v=2 saves predate it.
+    const restored = save.state.actionLog ? save.state : { ...save.state, actionLog: [] };
+    setState(restored);
     if (save.lang) setLang(save.lang);
     if (save.difficulty) setDifficulty(save.difficulty);
     if (save.windRoundsSetting) setWindRoundsSetting(save.windRoundsSetting);
@@ -1488,6 +1538,10 @@ function MahjongGame() {
         // longer faithfully reconstruct the match. Replay (§14.8) excludes
         // adminTouched matches; this flag survives resume saves.
         adminTouched: true,
+        // Appendix B.11 — clear the actionLog because it no longer aligns
+        // with the reconstructed state (tile IDs may have been rewritten,
+        // players may have been placed mid-hand, etc.).
+        actionLog: [],
         usedAdminIds: [...usedAdminIds, ...mintedThisCall],
         persistRev: prev.persistRev + 1,
       };
