@@ -2515,12 +2515,6 @@ function MahjongGame() {
 
       {/* ---- PLAYER AREA ---- */}
       <div style={S.playerSection}>
-        <div style={S.playerScoreRow}>
-          <span style={S.playerPortraitChip} aria-hidden="true">
-            <PortraitSvg preset={getPortrait(PLAYER_IDX, SL[PLAYER_IDX])} size={72}/>
-          </span>
-          <span style={{ ...S.scoreChip, ...(state.scores[PLAYER_IDX] < 0 ? S.scoreChipBroke : {}) }}>{SL[PLAYER_IDX]}: {state.scores[PLAYER_IDX]} {L.scoreLabel}</span>
-        </div>
         {/* Action bar */}
         <div style={S.actionBar}>
           {canDraw && (
@@ -2565,37 +2559,46 @@ function MahjongGame() {
           </div>
         )}
 
-        {/* Hand */}
-        <div style={S.playerHand}>
-          {player.hand.map((t, i) => {
-            const selected = selectedTileIdx === i;
-            const isHint = hintIdx === i;
-            return (
-              <button
-                tabIndex={-1}
-                key={t.id}
-                ref={(el) => registerTileRef(t.id, el)}
-                style={{
-                  ...S.handTile,
-                  ...(selected ? S.handTileSelected : {}),
-                  ...(canDiscard ? S.handTileClickable : {}),
-                  ...(isHint ? S.hintHighlight : {}),
-                  ...animStyleFor(t.id),
-                }}
-                onClick={() => {
-                  if (canDiscard) {
-                    if (selected) handlePlayerDiscard(i);
-                    else { setSelectedTileIdx(i); setHintIdx(null); }
-                  }
-                }}
-                title={TN(t)}
-              >
-                {isHint && <span style={S.hintBadge}>{L.hintBestTag}</span>}
-                <span style={S.tileImg}>{tileSymbol(t)}</span>
-                <span style={S.tileLabel}>{TN(t)}</span>
-              </button>
-            );
-          })}
+        {/* Hand + player info side-by-side. Portrait+score sit to the
+            right of the tiles, vertically centered against the hand. */}
+        <div style={S.playerHandRow}>
+          <div style={S.playerHand}>
+            {player.hand.map((t, i) => {
+              const selected = selectedTileIdx === i;
+              const isHint = hintIdx === i;
+              return (
+                <button
+                  tabIndex={-1}
+                  key={t.id}
+                  ref={(el) => registerTileRef(t.id, el)}
+                  style={{
+                    ...S.handTile,
+                    ...(selected ? S.handTileSelected : {}),
+                    ...(canDiscard ? S.handTileClickable : {}),
+                    ...(isHint ? S.hintHighlight : {}),
+                    ...animStyleFor(t.id),
+                  }}
+                  onClick={() => {
+                    if (canDiscard) {
+                      if (selected) handlePlayerDiscard(i);
+                      else { setSelectedTileIdx(i); setHintIdx(null); }
+                    }
+                  }}
+                  title={TN(t)}
+                >
+                  {isHint && <span style={S.hintBadge}>{L.hintBestTag}</span>}
+                  <span style={S.tileImg}>{tileSymbol(t)}</span>
+                  <span style={S.tileLabel}>{TN(t)}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div style={S.playerInfoBlock}>
+            <span style={S.playerPortraitChip} aria-hidden="true">
+              <PortraitSvg preset={getPortrait(PLAYER_IDX, SL[PLAYER_IDX])} size={72}/>
+            </span>
+            <span style={{ ...S.scoreChip, ...(state.scores[PLAYER_IDX] < 0 ? S.scoreChipBroke : {}) }}>{SL[PLAYER_IDX]}: {state.scores[PLAYER_IDX]} {L.scoreLabel}</span>
+          </div>
         </div>
       </div>
       </div>

@@ -536,9 +536,20 @@ function makeStyles(vw, vh) {
   playerMeldTile: { ...tileBase, fontSize: s(48), lineHeight: 1 },
   meldTag: { fontSize: ts(8), color: greenDim, marginLeft: s(4), textTransform: "uppercase", letterSpacing: 1 },
 
-  // Player hand
+  // Player hand + info block. The row wraps the hand tiles and the
+  // portrait/score column; the hand grows to fill the row, pushing the
+  // info block against the right edge so it aligns with the tiles.
+  playerHandRow: {
+    display: "flex", alignItems: "center", justifyContent: "space-between",
+    gap: s(16),
+  },
+  playerInfoBlock: {
+    display: "flex", flexDirection: "column", alignItems: "center",
+    gap: s(6), flexShrink: 0,
+  },
   playerHand: {
     display: "flex", gap: s(4), justifyContent: "center", flexWrap: "wrap",
+    flex: 1,
   },
   handTile: {
     display: "flex", flexDirection: "column", alignItems: "center",
