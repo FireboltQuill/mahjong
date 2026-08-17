@@ -1124,13 +1124,17 @@ function MahjongGame() {
     setState((prev) => {
       if (prev.currentTurn !== PLAYER_IDX) return prev;
       const player = prev.players[PLAYER_IDX];
-      if (!validateHu(player)) {
+      // Zimo — winning tile must be the just-drawn tile (or a gang
+      // replacement) and must still be in hand. Guards against a
+      // programmatic call (or stale UI click) on a post-chi/peng
+      // state where lastDrawn is either null or points at another
+      // seat's discard.
+      const winTile = prev.lastDrawn
+        ? player.hand.find((t) => t.id === prev.lastDrawn.id)
+        : null;
+      if (!winTile || !validateHu(player)) {
         return { ...prev, log: [...prev.log, _L().logBadHu], persistRev: prev.persistRev + 1 };
       }
-      // Zimo — winning tile is lastDrawn (guaranteed set right after the
-      // draw that produced the winning shape), fall back to the last
-      // hand tile if unset.
-      const winTile = prev.lastDrawn || player.hand[player.hand.length - 1];
       const stepped = stepDeclareHu(prev, PLAYER_IDX, { winningTileId: winTile.id, discarder: null });
       const action = {
         type: "declare_hu",
@@ -1603,7 +1607,14 @@ function MahjongGame() {
   const isPlayerTurn = state.currentTurn === PLAYER_IDX;
   const canDraw = isPlayerTurn && state.phase === "draw";
   const canDiscard = isPlayerTurn && state.phase === "discard" && state.turnDrawn;
-  const canHu = isPlayerTurn && state.phase === "discard" && state.turnDrawn && validateHu(player);
+  // Zimo requires a fresh self-draw (or gang replacement) — hu is
+  // NOT legal on a 14-tile-post-chi/peng state, even if the resulting
+  // hand shape is a valid winning shape. stepClaim clears lastDrawn to
+  // enforce this; require the tile to still be in hand as a belt so
+  // any future path that forgets to clear it can't ship the button.
+  const canHu = isPlayerTurn && state.phase === "discard" && state.turnDrawn
+    && state.lastDrawn && player.hand.some((t) => t.id === state.lastDrawn.id)
+    && validateHu(player);
   const concealedGangs = isPlayerTurn && state.phase === "discard" && state.turnDrawn ? findConcealedGangs(player.hand) : [];
   const promotedGangs = isPlayerTurn && state.phase === "discard" && state.turnDrawn ? findPromotedGangs(player) : [];
   const roundOver = state.winner !== null || state.isDraw;

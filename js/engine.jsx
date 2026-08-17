@@ -126,6 +126,11 @@ function stepClaim(state, claim) {
     turnDrawn: true,
     lastDiscard: null,
     lastDiscarder: null,
+    // Cleared because chi/peng doesn't produce a fresh draw. UI uses
+    // lastDrawn presence to decide when zimo is a legal option; a stale
+    // lastDrawn from the prior turn would falsely enable the Hu button
+    // on a 14-tile-post-claim state that isn't hu-eligible.
+    lastDrawn: null,
     awaitingPlayerClaim: null,
     playerDeclinedClaims: [],
   };
