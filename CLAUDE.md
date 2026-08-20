@@ -6,8 +6,9 @@ before touching gameplay code.
 
 ## Repo layout
 
-- The git repo lives in this directory (`.../mahjong/Untitled/`), **not** the parent
-  `mahjong/` folder — the parent isn't a git repo. `spec-kit/` alongside is unrelated.
+- Everything sits at the repo root (`.../mahjong/`). Historical note: the working
+  tree used to live one level deeper in `mahjong/Untitled/`; if a link, IDE
+  bookmark, or old note references `Untitled/`, drop that segment.
 - No bundler. `index.html` loads each `js/*.jsx` as a separate
   `<script type="text/babel">` transformed by babel-standalone in the browser.
   Script order in `index.html` is the dependency order (tiles → validation → claims
