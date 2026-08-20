@@ -178,17 +178,21 @@ function stepDeclareHu(state, seat, opts) {
   return workingState;
 }
 
-// §13.3 stepDeclareGang — concealed or from-discard. Both pop one
-// replacement tile from the wall. Returns terminal draw state if
-// the wall can't fund the replacement.
+// §13.3 stepDeclareGang — concealed, from-discard, or promoted. All
+// three pop one replacement tile from the wall. Returns terminal draw
+// state if the wall can't fund the replacement.
 //
 // concealed: all four tileIds come from seat's hand.
 // discard: three handTileIds from seat's hand, plus claimedTileId
 //   from discarder's discards. Claimer becomes currentTurn in
 //   discard phase.
+// promoted (加杠): meldIdx points at one of seat's existing open pengs
+//   and tileId is the fourth matching tile in hand. The peng is
+//   upgraded in place rather than appended, so openMelds ordering —
+//   and therefore meldIdx — stays stable across a replay.
 function stepDeclareGang(state, seat, opts) {
-  const { source, tileIds, handTileIds, claimedTileId, discarder, expectedReplacementTileId } = opts;
-  if (source !== "concealed" && source !== "discard") {
+  const { source, tileIds, handTileIds, claimedTileId, discarder, meldIdx, tileId, expectedReplacementTileId } = opts;
+  if (source !== "concealed" && source !== "discard" && source !== "promoted") {
     throw new Error(`stepDeclareGang: invalid source ${source}`);
   }
   if (state.wall.length === 0) {
@@ -209,6 +213,30 @@ function stepDeclareGang(state, seat, opts) {
     meld = { type: "gang", tiles: meldTiles, claimed: false, concealed: true };
     newPlayers = state.players.map((pl, i) =>
       i === seat ? { ...pl, hand: afterHand, openMelds: [...pl.openMelds, meld] } : pl
+    );
+  } else if (source === "promoted") {
+    const pengMeld = player.openMelds[meldIdx];
+    if (!pengMeld || pengMeld.type !== "peng") {
+      throw new ReplayMismatchError({
+        at: "stepDeclareGang.promoted.meld",
+        expected: `peng at openMelds[${meldIdx}]`,
+        got: player.openMelds.map((m) => m.type),
+      });
+    }
+    const handTile = findTileInHand(player.hand, tileId, "stepDeclareGang.promoted.hand");
+    if (tileKey(pengMeld.tiles[0]) !== tileKey(handTile)) {
+      throw new ReplayMismatchError({
+        at: "stepDeclareGang.promoted.tileKey",
+        expected: tileKey(pengMeld.tiles[0]),
+        got: tileKey(handTile),
+      });
+    }
+    const newHand = player.hand.filter((t) => t.id !== tileId);
+    const afterHand = sortHand([...newHand, replacement]);
+    meld = { ...pengMeld, type: "gang", tiles: [...pengMeld.tiles, handTile] };
+    const newMelds = player.openMelds.map((m, i) => (i === meldIdx ? meld : m));
+    newPlayers = state.players.map((pl, i) =>
+      i === seat ? { ...pl, hand: afterHand, openMelds: newMelds } : pl
     );
   } else {
     // source === "discard"
