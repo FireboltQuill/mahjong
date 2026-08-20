@@ -775,12 +775,6 @@ function MahjongGame() {
       }
 
       // Promoted gang (drew the 4th tile matching an open peng).
-      // NOTE: spec §13.6 explicitly excludes promoted-gang from the
-      // action schema on the grounds that the codebase doesn't
-      // implement it — but it does. Until the spec is updated, we
-      // preserve the state transition inline and skip the actionLog
-      // append, which means Phase 9b replay won't reproduce this
-      // branch. Flagged as a followup.
       const playerAfterCGang = newSt.players[p];
       const pGangs = findPromotedGangs(playerAfterCGang);
       if (pGangs.length > 0) {
@@ -793,19 +787,23 @@ function MahjongGame() {
         }
         const replacementTile = newSt.wall[0];
         pendingAnimsRef.current.push({ id: replacementTile.id, kind: "draw" });
-        const promotedMeld = { ...playerAfterCGang.openMelds[pg.meldIdx], type: "gang", tiles: [...playerAfterCGang.openMelds[pg.meldIdx].tiles, pg.tile] };
-        const newMelds = playerAfterCGang.openMelds.map((m, i) => i === pg.meldIdx ? promotedMeld : m);
-        const handMinusTile = playerAfterCGang.hand.filter((t) => t.id !== pg.tile.id);
-        const afterWall = newSt.wall.slice(1);
-        const handAfterReplacement = sortHand([...handMinusTile, replacementTile]);
-        const newPlayers = newSt.players.map((pl, i) =>
-          i === p ? { ...pl, hand: handAfterReplacement, openMelds: newMelds } : pl
-        );
+        const stepped = stepDeclareGang(newSt, p, {
+          source: "promoted",
+          meldIdx: pg.meldIdx,
+          tileId: pg.tile.id,
+        });
         newSt = {
-          ...newSt,
-          players: newPlayers,
-          wall: afterWall,
-          lastDrawn: replacementTile,
+          ...stepped,
+          actionLog: [...newSt.actionLog, {
+            type: "declare_gang",
+            seat: p,
+            tileKey: tileKey(pg.tile),
+            source: "promoted",
+            meldIdx: pg.meldIdx,
+            tileId: pg.tile.id,
+            tileIds: [...pg.pengTiles.map((t) => t.id), pg.tile.id],
+            expectedReplacementTileId: replacementTile.id,
+          }],
           log: [...newSt.log, _L().logPromotedGang(_SL()[p], _TN(pg.tile))],
         };
         winTile = replacementTile;
@@ -1212,24 +1210,28 @@ function MahjongGame() {
       if (tileKey(meld.tiles[0]) !== tileKey(tile)) return prev;
       if (!player.hand.some((t) => t.id === tile.id)) return prev;
 
-      const newHand = player.hand.filter((t) => t.id !== tile.id);
-      const newMeld = { ...meld, type: "gang", tiles: [...meld.tiles, tile] };
-      const newMelds = player.openMelds.map((m, i) => i === meldIdx ? newMeld : m);
-
       if (prev.wall.length === 0) {
         return { ...prev, isDraw: true, log: [...prev.log, _L().logExhaust], persistRev: prev.persistRev + 1 };
       }
       const replacement = prev.wall[0];
-      const afterWall = prev.wall.slice(1);
-      const afterHand = sortHand([...newHand, replacement]);
-      const newPlayers = prev.players.map((pl, i) =>
-        i === PLAYER_IDX ? { ...pl, hand: afterHand, openMelds: newMelds } : pl
-      );
+      const stepped = stepDeclareGang(prev, PLAYER_IDX, {
+        source: "promoted",
+        meldIdx,
+        tileId: tile.id,
+      });
+      const action = {
+        type: "declare_gang",
+        seat: PLAYER_IDX,
+        tileKey: tileKey(tile),
+        source: "promoted",
+        meldIdx,
+        tileId: tile.id,
+        tileIds: [...meld.tiles.map((t) => t.id), tile.id],
+        expectedReplacementTileId: replacement.id,
+      };
       return {
-        ...prev,
-        players: newPlayers,
-        wall: afterWall,
-        lastDrawn: replacement,
+        ...stepped,
+        actionLog: [...prev.actionLog, action],
         log: [...prev.log, _L().logYouPromotedGang(_TN(tile))],
         persistRev: prev.persistRev + 1,
       };

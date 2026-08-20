@@ -1595,7 +1595,7 @@ stepDraw(state, seat, { expectedTileId } = {})
 stepDiscard(state, seat, tileId)
 stepClaim(state, claim)
 stepDeclareHu(state, seat, { winningTileId, discarder, expectedWinType, expectedLargeHu, expectedSevenPairs } = {})
-stepDeclareGang(state, seat, { tileKey, source, tileIds, expectedReplacementTileId } = {})
+stepDeclareGang(state, seat, { tileKey, source, tileIds, handTileIds, claimedTileId, discarder, meldIdx, tileId, expectedReplacementTileId } = {})
 stepResolvePass(state)
 ```
 
@@ -1632,7 +1632,7 @@ For `stepDeclareHu`, the engine recomputes `winInfo` via `buildWinInfo` (scoring
 - `expectedLargeHu: boolean` — matches `winInfo.largeHu`.
 - `expectedSevenPairs: boolean` — matches `winInfo.sevenPairs`.
 
-For `stepDeclareGang`, `expectedReplacementTileId` validates the wall tile drawn as replacement for both `"concealed"` and `"discard"` sources (both cause a replacement draw — see Appendix A.6).
+For `stepDeclareGang`, `expectedReplacementTileId` validates the wall tile drawn as replacement for all three sources — `"concealed"`, `"discard"`, and `"promoted"` — since every gang formation causes a replacement draw (see Appendix A.6).
 
 Live wrappers must not pass any `expected*` field; they let the engine derive the truth.
 
@@ -1733,12 +1733,14 @@ Schemas:
   type: "declare_gang",
   seat,
   tileKey,                    // suit_rank or suit_honor
-  source,                     // "concealed" | "discard"
+  source,                     // "concealed" | "discard" | "promoted"
   tileIds,                    // the four tile ids forming the gang
   handTileIds,                // for source: "discard", the three tiles taken from hand
   claimedTileId,              // for source: "discard", the discard id being clawed into the gang
   discarder,                  // for source: "discard", the seat that discarded the tile
-  expectedReplacementTileId   // the wall tile drawn as replacement (both sources)
+  meldIdx,                    // for source: "promoted", index into seat's openMelds of the peng being upgraded
+  tileId,                     // for source: "promoted", the fourth matching tile taken from hand
+  expectedReplacementTileId   // the wall tile drawn as replacement (all three sources)
 }
 
 { type: "resolve_pass" }
@@ -1750,7 +1752,9 @@ Schemas:
 
 **Why `pass_claim` was removed:** pass decisions are not load-bearing for replay state reconstruction. The action log shows `discard` followed by either a `claim`/`declare_gang`/`declare_hu` (someone took it) or a `resolve_pass` (all declined). Mid-window per-player decline tracking is internal to live `resolveClaims`; replay does not need to reproduce the prompt-and-decline UX.
 
-**Why `"promoted"` gang source was removed:** the codebase does not implement promoted gang (peng → gang upgrade by drawing the fourth tile). Out of scope per §1.1 (no new rulesets). If the rule is ever added, extend the enum and add a `promoted_gang` action type that consumes the existing peng meld and the drawn tile.
+**Why promoted gang is a `declare_gang` source, not its own action type:** the codebase *does* implement promoted gang (加杠 — upgrading an open peng with the fourth matching tile); `findPromotedGangs` (claims.jsx) surfaces the candidates, and both `handleDeclarePromotedGang` and `processAIAction`'s draw-phase chain act on them. Earlier revisions of this section claimed the opposite and excluded the source from the schema, which left the branch unlogged and unreplayable. It folds into `declare_gang` for the same reason concealed and discard-source gangs do: it pops exactly one replacement tile from the wall, which is the property the replay engine dispatches on.
+
+**Why promoted gang records `meldIdx` rather than the peng's tile ids:** a promoted gang upgrades an existing meld *in place* — `openMelds` never grows — so meld ordering is stable between the recording run and the replay run, and the index alone is enough to address it. `tileIds` (the three peng tiles plus the hand tile) is recorded alongside for readability and for UI that wants to render the resulting gang without rebuilding it. The engine validates that `openMelds[meldIdx]` really is a peng and that its tile key matches the hand tile's, throwing `ReplayMismatchError` if either check fails.
 
 Replay actions must contain enough information to reproduce human and AI choices without running live AI decision wrappers. The replay engine validates all `expected*` fields and aborts with a `ReplayMismatchError` on disagreement; it does not re-decide those choices.
 
@@ -2525,6 +2529,7 @@ This table tells you exactly which `main.jsx` handlers must include `persistRev:
 - Concealed gang during AI turn → `declare_gang(source: "concealed", expectedReplacementTileId)`. If AI also wins, a separate `declare_hu(expectedWinType: "zimo")` follows.
 - Concealed gang during human turn → `declare_gang(source: "concealed", expectedReplacementTileId)`. Human's Hu click (if any) produces a separate `declare_hu` action.
 - Gang from discard (claimed) → `declare_gang(source: "discard", expectedReplacementTileId, claimedTileId, handTileIds, discarder)`. The discard pool's tile is moved into the meld; the discarder seat's `discards` array loses the tile.
+- Promoted gang (加杠, either seat) → `declare_gang(source: "promoted", meldIdx, tileId, tileIds, expectedReplacementTileId)`. The peng at `openMelds[meldIdx]` is rewritten in place as a gang and the fourth tile leaves the hand; no meld is appended. As with concealed gang, an AI win on the replacement emits a separate `declare_hu`, and the human's Hu click does the same.
 
 In all cases, `stepDeclareGang` is a single pure step that handles meld formation + replacement draw atomically. No separate `stepDraw` action follows for the replacement.
 
@@ -2654,7 +2659,8 @@ Wraps three potential pure steps in sequence:
 
 1. `stepDraw(state, p)`
 2. If post-draw hand has a concealed gang: `stepDeclareGang(state, p, { source: "concealed", ... })` — recursive on the same AI turn
-3. If post-replacement `validateHu` succeeds: `stepDeclareHu(state, p, { winningTileId: winTile.id, discarder: null })`
+3. If the post-draw hand can promote an open peng (`findPromotedGangs`): `stepDeclareGang(state, p, { source: "promoted", meldIdx, tileId })` — same turn, consumes another wall tile
+4. If post-replacement `validateHu` succeeds: `stepDeclareHu(state, p, { winningTileId: winTile.id, discarder: null })`
 
 **Wrapper responsibilities:**
 - Empty wall: terminal draw state
@@ -2797,6 +2803,7 @@ Each `expected*` field is checked at the point listed below. If any check fails,
 | `discard.tileId` | `stepDiscard` (not "expected" — load-bearing) | must be present in `players[seat].hand`; throws `InvalidActionError` if absent |
 | `claim.handTileIds`, `claimedTileId`, `discarder` | `stepClaim` | hand and discard pool consistency checks |
 | `declare_gang.tileIds`, `handTileIds`, `claimedTileId`, `discarder` | `stepDeclareGang` | same as claim |
+| `declare_gang.meldIdx`, `tileId` (source: `"promoted"`) | `stepDeclareGang` | `openMelds[meldIdx]` must be a peng whose tile key matches the hand tile at `tileId` |
 
 `discard.tileId`, `claim.handTileIds`, and `declare_gang.tileIds` are not "expected" because they are not redundant with engine derivation — they are the action's input, not its output. Replay does not validate them against a recomputed alternative; it uses them directly.
 
