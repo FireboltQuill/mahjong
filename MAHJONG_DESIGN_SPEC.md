@@ -2438,6 +2438,7 @@ Every effect, every `setState` updater, every ref initialization runs **twice** 
 | `nameGroups` | 22 | persisted name groups | via `mahjong_name_groups` |
 | `newNameInputs` / `newGroupInput` | 23–24 | input buffers | no |
 | `roundOverTab` / `gameOverTab` | 25–26 | modal tab UI | no |
+| `viewingBoard` | — | round-over "View Board": hides the round-over modal so the finished table is visible (all hands and concealed gangs face-up whenever `winner !== null \|\| isDraw`). Action bar shows Back to Results + Next Round / Game Summary while true | no — resets to `false` on every new round / new game / resume |
 | `gameOverAcknowledged` | 27 | terminal ack | **no** — lives in component state, not on `state`. The save effect's dep array reads it from component scope. On resume, it defaults to `false`; if the restored state is round-over, the round-over modal re-renders. |
 | `winSize` | 28 | viewport | no |
 | `logRef` | 29 | log scroll ref | n/a |
@@ -2450,7 +2451,7 @@ Every effect, every `setState` updater, every ref initialization runs **twice** 
 |---:|---|---|
 | 69 | mount | window resize listener |
 | 81 | `state.log` | log-panel auto-scroll |
-| 86 | `state.winner`, `state.isDraw` | reset `roundOverTab` to `"winner"` on new round |
+| 86 | `state.winner`, `state.isDraw` | reset `roundOverTab` to `"winner"` and `viewingBoard` to `false` on new round |
 | 94 | `state.winner`, `state.isDraw`, `state.roundNumber` | append per-round result to `state.roundResults` (with duplicate-guard for Strict Mode safety) |
 | 134 | `state.currentTurn`, `state.phase`, `state.turnDrawn`, `state.winner`, `state.isDraw`, `showMenu`, `state.awaitingPlayerClaim` | AI auto-play via 600ms `setTimeout` |
 
@@ -2472,7 +2473,7 @@ This table tells you exactly which `main.jsx` handlers must include `persistRev:
 | `handlePlayerClaim` | 498 | yes | yes | Branches to `executeClaim` or back to `resolveClaims` |
 | `applyAdmin` | 600 | yes | yes | Must also set `adminTouched: true` (Phase 2 addition) |
 | `nextRound` | 660 | yes | yes | Spreads `prev` into `initRound` per §5.3 — confirmed line 669 |
-| `startNewGame` | 519 | yes | reset (initial-state load) | Also resets `selectedTileIdx`, `claimOptions`, `roundOverTab`, `gameOverTab`, `gameOverAcknowledged` |
+| `startNewGame` | 519 | yes | reset (initial-state load) | Also resets `selectedTileIdx`, `claimOptions`, `roundOverTab`, `viewingBoard`, `gameOverTab`, `gameOverAcknowledged` |
 | `startWithAdmin` | 648 | yes | reset | Same as startNewGame plus opens admin |
 | `setGameOverAcknowledged(true)` | 1548 | n/a (separate React state) | yes (triggers save effect) | Dep of save effect at §6.6 |
 | `executeClaim` (internal) | 324 | no (called from above) | inherits caller | Helper |
@@ -2721,7 +2722,7 @@ This is the hottest single setState merge — it can fire on the same tick the h
 **Pure step:** `createInitialState(windRoundsSetting, lang, seed?, { dailyDate? })` per §9.6.
 
 **Wrapper responsibilities:**
-- Reset `selectedTileIdx`, `claimOptions`, `roundOverTab`, `gameOverTab`, `gameOverAcknowledged`, `showMenu`
+- Reset `selectedTileIdx`, `claimOptions`, `roundOverTab`, `viewingBoard`, `gameOverTab`, `gameOverAcknowledged`, `showMenu`
 - For `startWithAdmin`: open admin overlay with the freshly created state
 - Initial `persistRev: 0` (state starts at 0, bumped by first user mutation)
 - Clear `resumeClearedRef` (allows next save cycle to write again)
