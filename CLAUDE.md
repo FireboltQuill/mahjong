@@ -59,18 +59,16 @@ generation notes.
   ResolvePass); wrappers in `js/main.jsx` compose them into single-`setState`
   updates per spec §13.5, and every action-emitting handler appends a `state.actionLog`
   entry per §13.6.
+- Promoted gang (加杠) now routes through `stepDeclareGang(..., { source: "promoted",
+  meldIdx, tileId })` and emits a `declare_gang` actionLog entry from both the
+  human handler and the AI draw-phase chain. Spec §13.6 / A.6 / B.7 updated to
+  match — the old "promoted gang isn't implemented" note is gone.
 - **Phase 9b (replay data + UI) is next.** Depends on 9a's actionLog + engine.
   See spec §14 + Appendix B.10 for the plan; replay storage lives in
   `localStorage["mahjong_replays"]`.
 
 ## Known open items
 
-- **Promoted-gang / spec drift.** `handleDeclarePromotedGang` and the AI's
-  promoted-gang branch (in `processAIAction`) mutate state without emitting an
-  actionLog entry. Spec §13.6 excludes promoted gang from the schema on the
-  (stale) claim that the codebase doesn't implement it — it does. Needs a spec
-  update + `stepDeclareGang` extension (or a new `stepPromotedGang`) before
-  Phase 9b replay can reproduce that branch.
 - **Tianhu disabled.** PR #32 (hu-after-chi crash fix) requires `state.lastDrawn`
   to be in hand for the Hu button to appear; `initRound` leaves `lastDrawn` null,
   so a dealer's natural-hu initial deal no longer shows Hu. Accepted trade-off;
