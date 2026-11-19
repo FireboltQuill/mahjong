@@ -442,6 +442,9 @@ function makeStyles(vw, vh) {
   },
   oppMeldTile: { ...tileBase, fontSize: s(32), lineHeight: 1 },
   concealedTile: { opacity: 0.5, background: "rgba(60,80,60,0.7)" },
+  // Face-up concealed hand, shown on the board once a round is over.
+  oppHandReveal: { display: "flex", gap: 1, flexWrap: "wrap", marginTop: s(4) },
+  oppRevealTile: { ...tileBase, fontSize: s(26), lineHeight: 1 },
 
   // Discard pool
   discardPoolContainer: {
@@ -777,6 +780,13 @@ function makeStyles(vw, vh) {
     boxShadow: "0 24px 80px rgba(0,0,0,0.6)",
     maxHeight: "88vh", overflowY: "auto",
   },
+  roundOverSecondaryBtn: {
+    background: "rgba(201,169,97,0.1)", border: `1px solid ${goldDim}`, color: gold,
+    padding: `${s(12)}px ${s(24)}px`, borderRadius: s(8), fontSize: ts(15), fontWeight: "bold",
+    cursor: "pointer", outline: "none", letterSpacing: 1, whiteSpace: "nowrap",
+  },
+  // Winner/draw caption beside the board-view buttons in the action bar.
+  boardViewLabel: { color: gold, fontSize: ts(14), fontWeight: "bold", letterSpacing: 0.5, marginRight: s(4) },
   roundOverActions: {
     display: "flex", gap: s(10), justifyContent: "center", alignItems: "center",
     flexWrap: "wrap", marginTop: s(8),

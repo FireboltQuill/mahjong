@@ -39,6 +39,9 @@ function MahjongGame() {
   const [newNameInputs, setNewNameInputs] = useState({}); // per-group input buffer
   const [newGroupInput, setNewGroupInput] = useState("");
   const [roundOverTab, setRoundOverTab] = useState("winner"); // "winner" | "scoring" | "stats"
+  // Round-over "View Board": hides the results modal so the finished
+  // table (all hands face-up) is visible. Reset whenever a round starts.
+  const [viewingBoard, setViewingBoard] = useState(false);
   const [gameOverTab, setGameOverTab] = useState("standings"); // "standings" | "stats"
   const [gameOverAcknowledged, setGameOverAcknowledged] = useState(false);
   // Training mode (spec §5). The menu setting persists in localStorage
@@ -580,6 +583,7 @@ function MahjongGame() {
   useEffect(() => {
     if (state.winner === null && !state.isDraw) {
       setRoundOverTab("winner");
+      setViewingBoard(false);
     }
   }, [state.winner, state.isDraw]);
 
@@ -1310,6 +1314,7 @@ function MahjongGame() {
     setSelectedTileIdx(null);
     setClaimOptions(null);
     setRoundOverTab("winner");
+    setViewingBoard(false);
     setGameOverTab("standings");
     setGameOverAcknowledged(false);
     setGameStarted(true);
@@ -1335,6 +1340,7 @@ function MahjongGame() {
     setSelectedTileIdx(null);
     setClaimOptions(null);
     setRoundOverTab("winner");
+    setViewingBoard(false);
     setGameOverTab("standings");
     setGameOverAcknowledged(false);
     setHasResumeSave(false);
@@ -1372,6 +1378,7 @@ function MahjongGame() {
     setSelectedTileIdx(null);
     setClaimOptions(null);
     setRoundOverTab("winner");
+    setViewingBoard(false);
     setGameOverTab("standings");
     setGameOverAcknowledged(false);
     setGameStarted(true);
@@ -1571,6 +1578,7 @@ function MahjongGame() {
     setSelectedTileIdx(null);
     setClaimOptions(null);
     setRoundOverTab("winner");
+    setViewingBoard(false);
     setGameOverTab("standings");
     setGameOverAcknowledged(false);
     setGameStarted(true);
@@ -1606,21 +1614,29 @@ function MahjongGame() {
 
   // Derived state
   const player = state.players[PLAYER_IDX];
+  const roundOver = state.winner !== null || state.isDraw;
   const isPlayerTurn = state.currentTurn === PLAYER_IDX;
-  const canDraw = isPlayerTurn && state.phase === "draw";
-  const canDiscard = isPlayerTurn && state.phase === "discard" && state.turnDrawn;
+  // Action flags are gated on !roundOver: the board stays visible after
+  // the round ends ("View Board"), and a wall-exhaustion draw on the
+  // human's turn would otherwise leave Draw/Hu/Gang buttons live.
+  const canAct = isPlayerTurn && !roundOver;
+  const canDraw = canAct && state.phase === "draw";
+  const canDiscard = canAct && state.phase === "discard" && state.turnDrawn;
   // Zimo requires a fresh self-draw (or gang replacement) — hu is
   // NOT legal on a 14-tile-post-chi/peng state, even if the resulting
   // hand shape is a valid winning shape. stepClaim clears lastDrawn to
   // enforce this; require the tile to still be in hand as a belt so
   // any future path that forgets to clear it can't ship the button.
-  const canHu = isPlayerTurn && state.phase === "discard" && state.turnDrawn
+  const canHu = canDiscard
     && state.lastDrawn && player.hand.some((t) => t.id === state.lastDrawn.id)
     && validateHu(player);
-  const concealedGangs = isPlayerTurn && state.phase === "discard" && state.turnDrawn ? findConcealedGangs(player.hand) : [];
-  const promotedGangs = isPlayerTurn && state.phase === "discard" && state.turnDrawn ? findPromotedGangs(player) : [];
-  const roundOver = state.winner !== null || state.isDraw;
+  const concealedGangs = canDiscard ? findConcealedGangs(player.hand) : [];
+  const promotedGangs = canDiscard ? findPromotedGangs(player) : [];
   const gameOver = roundOver && state.roundNumber >= state.totalRounds;
+  // Winning tile id, used to highlight it in the face-up hands on the
+  // board once the round is over. Only the winner holds this id.
+  const boardWinTileId = state.winner !== null && state.winInfo && state.winInfo.winningTile
+    ? state.winInfo.winningTile.id : null;
 
   // ============================================================
   // HELPER: Render an opponent info strip
@@ -1668,12 +1684,28 @@ function MahjongGame() {
           <div style={S.oppMeldsRow}>
             {opp.openMelds.map((m) => (
               <div key={m.tiles[0].id} style={S.oppMeldGroup}>
-                {m.tiles.map((t) => (
-                  <span key={t.id} style={{ ...S.oppMeldTile, ...(m.concealed ? S.concealedTile : {}) }}>
-                    {m.concealed ? "🀫" : tileSymbol(t)}
-                  </span>
-                ))}
+                {m.tiles.map((t) => {
+                  const hidden = m.concealed && !roundOver;
+                  return (
+                    <span key={t.id} style={{ ...S.oppMeldTile, ...(hidden ? S.concealedTile : {}) }}>
+                      {hidden ? "🀫" : tileSymbol(t)}
+                    </span>
+                  );
+                })}
               </div>
+            ))}
+          </div>
+        )}
+        {roundOver && opp.hand.length > 0 && (
+          <div style={S.oppHandReveal}>
+            {sortHand(opp.hand).map((t) => (
+              <span
+                key={t.id}
+                title={TN(t)}
+                style={{ ...S.oppRevealTile, ...(t.id === boardWinTileId ? S.winTileHighlight : {}) }}
+              >
+                {tileSymbol(t)}
+              </span>
             ))}
           </div>
         )}
@@ -2608,6 +2640,21 @@ function MahjongGame() {
           {trainingMode && canDiscard && (
             <button tabIndex={-1} style={S.actionBtn} onClick={handleHint}>{L.hintBtn}</button>
           )}
+          {roundOver && viewingBoard && !gameOverAcknowledged && (
+            <>
+              <span style={S.boardViewLabel}>
+                {state.winner !== null
+                  ? (state.winner === PLAYER_IDX ? L.youWin : L.otherWins(SL[state.winner]))
+                  : L.drawExhausted}
+              </span>
+              <button tabIndex={-1} style={S.actionBtn} onClick={() => setViewingBoard(false)}>{L.backToResults}</button>
+              {gameOver ? (
+                <button tabIndex={-1} style={S.actionBtnWin} onClick={() => { setViewingBoard(false); setGameOverAcknowledged(true); }}>{L.gameSummary}</button>
+              ) : (
+                <button tabIndex={-1} style={S.actionBtnWin} onClick={nextRound}>{L.nextRound}</button>
+              )}
+            </>
+          )}
         </div>
 
         {/* Open melds */}
@@ -2615,11 +2662,14 @@ function MahjongGame() {
           <div style={S.playerMeldsRow}>
             {player.openMelds.map((m) => (
               <div key={m.tiles[0].id} style={S.playerMeldGroup}>
-                {m.tiles.map((t) => (
-                  <span key={t.id} style={{ ...S.playerMeldTile, ...(m.concealed ? S.concealedTile : {}), ...animStyleFor(t.id) }}>
-                    {m.concealed ? "🀫" : tileSymbol(t)}
-                  </span>
-                ))}
+                {m.tiles.map((t) => {
+                  const hidden = m.concealed && !roundOver;
+                  return (
+                    <span key={t.id} style={{ ...S.playerMeldTile, ...(hidden ? S.concealedTile : {}), ...animStyleFor(t.id) }}>
+                      {hidden ? "🀫" : tileSymbol(t)}
+                    </span>
+                  );
+                })}
                 <span style={S.meldTag}>{m.claimed ? L.open : L.hidden}</span>
               </div>
             ))}
@@ -2654,7 +2704,7 @@ function MahjongGame() {
                   title={TN(t)}
                 >
                   {isHint && <span style={S.hintBadge}>{L.hintBestTag}</span>}
-                  <span style={S.tileImg}>{tileSymbol(t)}</span>
+                  <span style={{ ...S.tileImg, ...(roundOver && t.id === boardWinTileId ? S.winTileHighlight : {}) }}>{tileSymbol(t)}</span>
                   <span style={S.tileLabel}>{TN(t)}</span>
                 </button>
               );
@@ -2679,7 +2729,7 @@ function MahjongGame() {
       </div>
 
       {/* ---- ROUND OVER OVERLAY ---- */}
-      {roundOver && !gameOverAcknowledged && (
+      {roundOver && !gameOverAcknowledged && !viewingBoard && (
         <div style={S.overlay}>
           <div style={S.roundOverBox}>
             <div style={S.tabBar}>
@@ -2851,6 +2901,7 @@ function MahjongGame() {
             </div>
 
             <div style={S.roundOverActions}>
+              <button tabIndex={-1} style={S.roundOverSecondaryBtn} onClick={() => setViewingBoard(true)}>{L.viewBoard}</button>
               {gameOver ? (
                 <button tabIndex={-1} style={S.startBtn} onClick={() => setGameOverAcknowledged(true)}>{L.gameSummary}</button>
               ) : (
